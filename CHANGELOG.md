@@ -20,7 +20,10 @@ the notes of the version's GitHub Release.
 - Markdown turned into the Google Chat syntax; texts cut at 4,096 characters.
 - Never sent twice: no retry; pauses on 429/5xx (kept across restarts); a
   refused URL is not used again until it changes or the Test button succeeds.
-- A cap of messages per hour (60 by default), one message a second per space,
-  the same text to the same space within 15 s posted once.
+- A cap of messages per hour (60 by default), one message every 1.1 s per
+  Google space (shared by its webhooks), the same text to the same space
+  within 15 s posted once (the duplicate takes the first one's outcome).
+- A "Forget the refused webhook URLs" button.
+- Mentions typed in a text (`<users/all>`) never notify the space.
 
 [Unreleased]: https://github.com/LM1LC3N7/gladys-google-chat/commits/main

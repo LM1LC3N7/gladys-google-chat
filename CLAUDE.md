@@ -38,12 +38,14 @@ src/store.js      /data/state.json
 ## Rules
 
 - **Never sent twice.** No retry anywhere: 5xx and no answer are "maybe
-  posted". A 429/5xx pauses the space; 401/403/404 refuse the URL until it
-  changes or the Test button succeeds.
+  posted". A 429/5xx pauses the Google space (all its webhooks); 401/403/404
+  refuse the webhook URL until it changes, the Test button succeeds or the
+  Forget button is clicked. A duplicate within 15 s takes the first one's
+  outcome, never "posted" before it.
 - **The webhook URL is a secret**: checked strictly (https,
   chat.googleapis.com, `/v1/spaces/<id>/messages`, `key` and `token` only),
-  never logged, never in a status, an error or /data (a salted fingerprint
-  only); logs name a space `space #xxxxxx`.
+  never logged, never in a status, an error or /data (an 8-bit salted
+  fingerprint only); logs name a space `space #xxxxxx`.
 - **Nothing sent on its own**: only a Gladys message, a scene or a click.
 - **Gladys acks a message within 5 s**: answer within 3.5 s, never wait
   without bound (queue wait bounded, /data never awaited on the path).

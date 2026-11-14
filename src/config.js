@@ -20,7 +20,8 @@ const PARAM = /^[A-Za-z0-9_.%=-]{1,512}$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
 /**
- * Checks a webhook URL. Resolves `{ url }` (rebuilt from its checked parts) or
+ * Checks a webhook URL. Resolves `{ url, space }` (the URL rebuilt from its
+ * checked parts, and the id of the Google space, shared by its webhooks) or
  * `{ error }`, a code of i18n.js (`emptyUrl`, `badUrl`, `notGoogleChat`,
  * `badUrlParams`): never the URL itself.
  */
@@ -71,6 +72,7 @@ export function parseWebhookUrl(value) {
   if (!PARAM.test(raw.key ?? '') || !PARAM.test(raw.token ?? '')) return { error: 'badUrlParams' };
   return {
     url: `https://${HOST}/v1/spaces/${space[1]}/messages?key=${raw.key}&token=${raw.token}`,
+    space: space[1],
   };
 }
 
@@ -82,7 +84,7 @@ function integerIn(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
-/** `{ webhook: { url } | { error } | null, maxPerHour }`. */
+/** `{ webhook: { url, space } | { error } | null, maxPerHour }`. */
 export function normalizeConfig(raw = {}) {
   const text = typeof raw?.webhook_url === 'string' ? raw.webhook_url.trim() : '';
   return {

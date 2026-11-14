@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// On the real clock (sped up 10 times): the messages of one space leave one
+// On the real clock, not sped up (x1): the messages of one space leave one
 // slot apart (1.1 s, never earlier), and a Gladys message without an answer is
 // acked within its 3.5 s budget. Wide margins: late under load, never early.
 // -----------------------------------------------------------------------------
@@ -9,9 +9,9 @@ import assert from 'node:assert/strict';
 import { realClock } from './helpers/clock.js';
 import { USER_URL, setup } from './helpers/app.js';
 
-const SPEED = 10;
+const SPEED = 1;
 
-test('real clock: one space, three messages, 1.1 s apart (0.9..1.5 x)', async (t) => {
+test('real clock x1: one space, three messages, 1.1 s apart (0.9..1.5 x)', async (t) => {
   const clock = realClock({ speed: SPEED });
   const ctx = await setup({ clock });
   t.after(async () => {
@@ -26,17 +26,22 @@ test('real clock: one space, three messages, 1.1 s apart (0.9..1.5 x)', async (t
     results.map((r) => r.success),
     [true, true, true],
   );
+  // Under load an ack may come from the 3.5 s budget before the last request:
+  // wait for it (bounded) rather than fail on a slow machine.
+  for (let i = 0; i < 100 && ctx.chat.calls.length < 3; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   const at = ctx.chat.calls.map((c) => c.at);
   assert.equal(at.length, 3);
   for (let i = 1; i < at.length; i += 1) {
     const gap = at[i] - at[i - 1];
-    assert.ok(gap >= 0.9 * 1100 && gap <= 1.5 * 1100 + 2000, `gap ${Math.round(gap)} ms`);
+    assert.ok(gap <= 2500, `gap ${Math.round(gap)} ms (late under load, wide margin)`);
     // Google's limit is one a second: the 1.1 s slot leaves room for the jitter of a request.
     assert.ok(gap >= 1000, `never under a second: ${Math.round(gap)} ms`);
   }
 });
 
-test('real clock: no answer, the ack comes at 3.5 s (not before, well before 5 s)', async (t) => {
+test('real clock x1: no answer, the ack comes at 3.5 s (not before, well before 5 s)', async (t) => {
   const clock = realClock({ speed: SPEED });
   const ctx = await setup({ clock, answer: () => 'hang' });
   t.after(async () => {

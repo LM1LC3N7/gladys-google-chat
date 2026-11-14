@@ -12,7 +12,15 @@ webhook**. Send only. Not affiliated with Google.
 - Needs a **Google Workspace Business or Enterprise** account whose
   administrator allows incoming webhooks.
 - Never sends a message twice, never retries on its own; a cap of messages per
-  hour (60 by default), one message a second per space, pauses on 429/5xx.
+  hour (60 by default), one message every 1.1 s per Google space (shared by
+  its webhooks), pauses on 429/5xx.
+- The same text to the same Google space within 15 s is posted once: a
+  duplicate gets the outcome of the first message (a failure stays a
+  failure); the scene action then answers `posted: false`,
+  `deduplicated: true`.
+- A URL refused by Google (401/403/404) is not used again until it changes,
+  the Test button succeeds (default space) or the "Forget the refused webhook
+  URLs" button is clicked.
 - The webhook URL is a secret: never logged, never in the status nor `/data`.
 
 Never tested with a real Google Chat space: written from Google's

@@ -14,7 +14,7 @@
   {
     "name": "dedupe within 15 s",
     "file": "src/app.js",
-    "from": "if (space.recent.has(hash)) {",
+    "from": "if (earlier) {",
     "to": "if (false) {"
   },
   {
@@ -26,8 +26,8 @@
   {
     "name": "queue wait bounded",
     "file": "src/app.js",
-    "from": "slot - mono > QUEUE_WAIT_MAX) return",
-    "to": "slot - mono > 1e9) return"
+    "from": "if (slot - mono > QUEUE_WAIT_MAX) return notSent('spaceBusy');",
+    "to": ""
   },
   {
     "name": "one slot per message",
@@ -44,7 +44,7 @@
   {
     "name": "dedupe forgets a message not posted",
     "file": "src/app.js",
-    "from": "if (!MAYBE_POSTED.has(outcome.kind)) {",
+    "from": "if (!MAYBE_POSTED.has(outcome.kind) && space.recent.get(hash) === entry) {",
     "to": "if (false) {"
   },
   {
@@ -114,12 +114,6 @@
     "to": "(retryAfter ?? backoff)"
   },
   {
-    "name": "never before the slot",
-    "file": "src/app.js",
-    "from": "for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {",
-    "to": "for (let left = slot - mono, n = 0; n < 1 && !this.stopped; n += 1) {"
-  },
-  {
     "name": "only chat.googleapis.com",
     "file": "src/config.js",
     "from": "url.hostname !== HOST ||",
@@ -160,5 +154,131 @@
     "file": "src/format.js",
     "from": "\\((https?:\\/\\/",
     "to": "\\(([a-z]+:"
+  },
+  {
+    "name": "maybe posted includes no answer",
+    "file": "src/app.js",
+    "from": "const MAYBE_POSTED = new Set(['posted', 'serverError', 'unconfirmed']);",
+    "to": "const MAYBE_POSTED = new Set(['posted', 'serverError']);"
+  },
+  {
+    "name": "maybe posted includes 5xx",
+    "file": "src/app.js",
+    "from": "const MAYBE_POSTED = new Set(['posted', 'serverError', 'unconfirmed']);",
+    "to": "const MAYBE_POSTED = new Set(['posted', 'unconfirmed']);"
+  },
+  {
+    "name": "pause saved at once",
+    "file": "src/app.js",
+    "from": "outcome.pauseMs = this.pause(spaceId, outcome.retryAfter, after);\n        this.save();",
+    "to": "outcome.pauseMs = this.pause(spaceId, outcome.retryAfter, after);"
+  },
+  {
+    "name": "dedupe log names the space by label",
+    "file": "src/app.js",
+    "from": "`Same message to ${label} less",
+    "to": "`Same message to ${url} less"
+  },
+  {
+    "name": "duplicate never posted before the first",
+    "file": "src/app.js",
+    "from": "return first.kind === 'posted'",
+    "to": "return true"
+  },
+  {
+    "name": "thread key in the dedupe",
+    "file": "src/app.js",
+    "from": ".update(threadKey ?? '')",
+    "to": ".update('')"
+  },
+  {
+    "name": "status back at the end of a pause",
+    "file": "src/app.js",
+    "from": "this.statusTimer = this.timers.setTimeout(",
+    "to": "this.statusTimer = (() => undefined)("
+  },
+  {
+    "name": "8-bit fingerprints",
+    "file": "src/app.js",
+    "from": "const FP_HEX = 2;",
+    "to": "const FP_HEX = 32;"
+  },
+  {
+    "name": "pause per Google space",
+    "file": "src/app.js",
+    "from": "outcome.pauseMs = this.pause(spaceId, outcome.retryAfter, after);",
+    "to": "outcome.pauseMs = this.pause(url, outcome.retryAfter, after);"
+  },
+  {
+    "name": "slot per Google space",
+    "file": "src/app.js",
+    "from": "const space = this.spaceOf(spaceId);",
+    "to": "const space = this.spaceOf(url);"
+  },
+  {
+    "name": "text undefined is empty",
+    "file": "src/app.js",
+    "from": "message?.text ?? ''",
+    "to": "message?.text ?? 'undefined'"
+  },
+  {
+    "name": "invalid default URL gives its reason",
+    "file": "src/app.js",
+    "from": "if (webhook.error) throw new Error(invalidText(webhook.error).en);",
+    "to": ""
+  },
+  {
+    "name": "nothing posted throws to Gladys",
+    "file": "src/app.js",
+    "from": "if (NOTHING_POSTED.has(outcome.kind)) throw",
+    "to": "if (false) throw"
+  },
+  {
+    "name": "store mode 0600",
+    "file": "src/store.js",
+    "from": "open(tmp, 'w', 0o600)",
+    "to": "open(tmp, 'w', 0o644)"
+  },
+  {
+    "name": "torn file set aside",
+    "file": "src/store.js",
+    "from": "      await this.setAside();\n      return {};",
+    "to": "      return {};"
+  },
+  {
+    "name": "answer bound 64 KB",
+    "file": "src/constants.js",
+    "from": "MAX_RESPONSE_BYTES = 64 * 1024;",
+    "to": "MAX_RESPONSE_BYTES = 640 * 1024 * 1024;"
+  },
+  {
+    "name": "message name form",
+    "file": "src/chat.js",
+    "from": "const NAME = /^spaces\\/[A-Za-z0-9_-]{1,128}\\/messages\\/[A-Za-z0-9_.-]{1,128}$/;",
+    "to": "const NAME = /./;"
+  },
+  {
+    "name": "mentions neutralized",
+    "file": "src/format.js",
+    "from": ".replace(/<users\\/([^<>\\s]{1,128})>/g, '@$1')",
+    "to": ".replace(/<nousers\\/([^<>\\s]{1,128})>/g, '@$1')"
+  },
+  {
+    "name": "cut never inside a link",
+    "file": "src/format.js",
+    "from": "if (open >= 0 && !cut.includes('>', open)) cut = cut.slice(0, open);",
+    "to": ""
+  },
+  {
+    "name": "surrogate dropped at the input bound",
+    "file": "src/format.js",
+    "from": "source.slice(0, bound).replace(/[\\uD800-\\uDBFF]$/, '')",
+    "to": "source.slice(0, bound)"
+  },
+  {
+    "name": "never before the slot",
+    "file": "src/app.js",
+    "from": "for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {",
+    "to": "for (let left = slot - mono, n = 0; n < 1 && !this.stopped; n += 1) {"
   }
 ]

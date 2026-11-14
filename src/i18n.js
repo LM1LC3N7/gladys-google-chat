@@ -25,8 +25,8 @@ export const TEXTS = {
     fr: 'Espace par défaut : {reason}',
   },
   defaultRefused: {
-    en: 'Default space: Google Chat refused the webhook URL (HTTP {status}). Nothing is sent to it until a new URL is saved or the Test button succeeds.',
-    fr: 'Espace par défaut : Google Chat a refusé l’URL du webhook (HTTP {status}). Rien ne lui est envoyé avant qu’une nouvelle URL soit enregistrée ou que le bouton Tester réussisse.',
+    en: 'Default space: Google Chat refused the webhook URL (HTTP {status}). Nothing is sent to it until a new URL is saved, the Test button succeeds or the refused URLs are forgotten.',
+    fr: 'Espace par défaut : Google Chat a refusé l’URL du webhook (HTTP {status}). Rien ne lui est envoyé avant qu’une nouvelle URL soit enregistrée, que le bouton Tester réussisse ou que les URL refusées soient oubliées.',
   },
   defaultPaused: {
     en: 'Default space: Google Chat asked to slow down; nothing is sent to it for {minutes} min.',
@@ -55,8 +55,8 @@ export const TEXTS = {
     fr: 'le message est vide : rien n’a été envoyé.',
   },
   refusedEarlier: {
-    en: 'Google Chat refused this webhook URL earlier (HTTP {status}): nothing sent. Save a new URL, or click Test for the default space.',
-    fr: 'Google Chat a déjà refusé cette URL de webhook (HTTP {status}) : rien n’a été envoyé. Enregistrez une nouvelle URL, ou cliquez sur Tester pour l’espace par défaut.',
+    en: 'Google Chat refused this webhook URL earlier (HTTP {status}): nothing sent. Save a new URL; the administrator can click Test (default space) or Forget the refused URLs.',
+    fr: 'Google Chat a déjà refusé cette URL de webhook (HTTP {status}) : rien n’a été envoyé. Enregistrez une nouvelle URL ; l’administrateur peut cliquer sur Tester (espace par défaut) ou Oublier les URL refusées.',
   },
   paused: {
     en: 'Google Chat asked to slow down for this space: nothing sent for {minutes} more min.',
@@ -85,8 +85,12 @@ export const TEXTS = {
     fr: 'Message publié dans l’espace.',
   },
   duplicate: {
-    en: 'The same message was posted in this space less than 15 s ago: not posted twice.',
-    fr: 'Le même message a été publié dans cet espace il y a moins de 15 s : pas publié deux fois.',
+    en: 'Already posted: the same message was posted in this space less than 15 s ago, it is not posted twice.',
+    fr: 'Déjà publié : le même message a été publié dans cet espace il y a moins de 15 s, il n’est pas publié deux fois.',
+  },
+  forgotten: {
+    en: '{count} refused webhook URL(s) forgotten: the next message to each is tried once.',
+    fr: '{count} URL de webhook refusée(s) oubliée(s) : le prochain message vers chacune est essayé une fois.',
   },
   rateLimited: {
     en: 'Google Chat refused the message for now (too many requests): nothing posted, nothing sent to this space for {minutes} min.',

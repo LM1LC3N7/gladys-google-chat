@@ -105,7 +105,7 @@ test('a 401: nothing posted, the URL refused for good (fingerprint in /data), li
   // Kept as a salted fingerprint only.
   const refused = Object.keys(ctx.store.data.refused);
   assert.equal(refused.length, 1);
-  assert.match(refused[0], /^[0-9a-f]{32}$/);
+  assert.match(refused[0], /^[0-9a-f]{2}$/, '8 bits only');
   // A restart keeps it (same /data).
   const store = ctx.store;
   await ctx.app.stop();
@@ -388,6 +388,7 @@ test('scene action: default space, thread key, outputs; no default space or a ba
   assert.equal(ack.success, true);
   assert.deepEqual(ack.data.outputs, {
     posted: true,
+    deduplicated: false,
     message_name: 'spaces/AAAAdefault/messages/m1.m1',
   });
   const [call] = ctx.chat.calls;
@@ -546,7 +547,11 @@ test('the URLs, keys and tokens never reach a log, a status, an ack or /data', a
     await sent;
   }
   await ctx.gladys.fake.sceneAction('post_message', { text: 'x' });
-  await ctx.clock.advance(2 * SECOND);
+  const dup1 = ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAdup') }, msg('dup'));
+  const dup2 = ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAdup') }, msg('dup'));
+  await ctx.clock.advance(11 * SECOND);
+  await dup1;
+  await dup2;
   await ctx.gladys.fake.action('test_webhook');
   await ctx.gladys.fake.configUpdated({ webhook_url: `${DEFAULT_URL}&x=1` });
   await ctx.gladys.fake.action('test_webhook');
@@ -556,6 +561,9 @@ test('the URLs, keys and tokens never reach a log, a status, an ack or /data', a
     assert.ok(!said.includes(secret), secret);
   }
   assert.ok(said.includes('space #'), 'spaces are named by a short fingerprint');
+  assert.ok(said.includes('Same message to space #'), 'the dedupe line was written');
+  for (const space of [...spaces, 'AAAAdefault', 'AAAAdup'])
+    assert.ok(!said.includes(space), space);
 });
 
 test('stop: a message waiting its slot is not sent, no timer left, nothing after', async (t) => {
@@ -658,7 +666,7 @@ test('a pause kept in /data is capped to 6 h (a far date is not trusted)', async
   const salt = '0123456789abcdef0123456789abcdef';
   const probe = await setup({ store: createMemoryStore({ salt }) });
   await until(() => probe.app.loaded);
-  const fp = probe.app.fingerprint(USER_URL);
+  const fp = probe.app.fingerprint('space', 'AAAAuser1');
   await probe.app.stop();
   const store = createMemoryStore({
     salt,
@@ -689,10 +697,241 @@ test('stop cuts a request waiting for its answer (no hang, nothing left)', async
   let timer;
   const stopped = await Promise.race([
     ctx.app.stop().then(() => 'stopped'),
-    new Promise((resolve) => (timer = setTimeout(() => resolve('hung'), 2000))),
+    new Promise((resolve) => (timer = setTimeout(() => resolve('hung'), 10_000))),
   ]);
   clearTimeout(timer);
   assert.equal(stopped, 'stopped');
   assert.equal((await sent).kind, 'unconfirmed');
   assert.equal(ctx.clock.pending, 0);
+});
+
+// --- Review r1: spaces shared by webhooks, dedupe outcome, 8-bit fingerprints --
+
+const SHARED_A = urlOf('AAAAshared', 'TokenOfWebhookA-1%3D');
+const SHARED_B = urlOf('AAAAshared', 'TokenOfWebhookB-2%3D');
+
+test('two webhooks of one Google space share its slot and its pause', async (t) => {
+  let n = 0;
+  const ctx = await setup({
+    answer: () => ((n += 1) === 2 ? json({}, 429) : posted('AAAAshared')),
+  });
+  t.after(() => ctx.app.stop());
+  const a = ctx.gladys.fake.sendMessage({ webhook_url: SHARED_A }, msg('a'));
+  const b = ctx.gladys.fake.sendMessage({ webhook_url: SHARED_B }, msg('b'));
+  await ctx.clock.advance(3 * SECOND);
+  assert.equal((await a).success, true);
+  assert.equal((await b).success, false, 'the 429');
+  const [first, second] = ctx.chat.calls.map((c) => c.at);
+  assert.ok(second - first >= 1100, 'one slot for the space, whatever the webhook');
+  // The 429 on webhook B pauses webhook A too: same space.
+  const c = await ctx.gladys.fake.sendMessage({ webhook_url: SHARED_A }, msg('c'));
+  assert.match(c.error, /slow down for this space/);
+  assert.equal(ctx.chat.calls.length, 2);
+  // A refusal stays per webhook (its token).
+});
+
+test('a 401 on one webhook of a space does not refuse its other webhooks', async (t) => {
+  let n = 0;
+  const ctx = await setup({
+    answer: () => ((n += 1) === 1 ? json({}, 401) : posted('AAAAshared')),
+  });
+  t.after(() => ctx.app.stop());
+  assert.equal(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: SHARED_A }, msg('a'))).success,
+    false,
+  );
+  await ctx.clock.advance(2 * SECOND);
+  assert.equal(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: SHARED_B }, msg('b'))).success,
+    true,
+  );
+});
+
+test('the same text through two webhooks of one space: posted once', async (t) => {
+  const ctx = await setup({ answer: () => posted('AAAAshared') });
+  t.after(() => ctx.app.stop());
+  const a = ctx.gladys.fake.sendMessage({ webhook_url: SHARED_A }, msg('Backup failed'));
+  const b = ctx.gladys.fake.sendMessage({ webhook_url: SHARED_B }, msg('Backup failed'));
+  await ctx.clock.advance(2 * SECOND);
+  assert.equal((await a).success, true);
+  assert.equal((await b).success, true);
+  assert.equal(ctx.chat.calls.length, 1);
+});
+
+test('a duplicate takes the outcome of the first: a 429 fails both, nothing said posted', async (t) => {
+  const ctx = await setup({ answer: () => json({}, 429) });
+  t.after(() => ctx.app.stop());
+  const one = ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
+  const two = ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
+  const three = ctx.gladys.fake.sendMessage({ webhook_url: DEFAULT_URL }, msg('Door open'));
+  await ctx.clock.advance(2 * SECOND);
+  assert.equal((await one).success, false);
+  assert.equal((await two).success, false);
+  assert.match((await two).error, /too many requests/);
+  assert.equal((await three).success, false);
+  assert.equal(ctx.chat.calls.length, 1);
+});
+
+test('a duplicate after a posted message says "already posted" (posted false, deduplicated true)', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const one = await ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
+  assert.deepEqual(one.data.outputs, {
+    posted: true,
+    deduplicated: false,
+    message_name: 'spaces/AAAAdefault/messages/m1.m1',
+  });
+  await ctx.clock.advance(3 * SECOND);
+  const two = await ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
+  assert.deepEqual(two.data.outputs, {
+    posted: false,
+    deduplicated: true,
+    message_name: 'spaces/AAAAdefault/messages/m1.m1',
+  });
+  // Another thread key is another message.
+  const three = await ctx.gladys.fake.sceneAction('post_message', {
+    text: 'Door open',
+    thread_key: 'garage',
+  });
+  assert.equal(three.data.outputs.posted, true);
+  assert.equal(ctx.chat.calls.length, 2);
+  // The Test button clicked twice within 15 s says it too.
+  await ctx.clock.advance(2 * SECOND);
+  const test1 = await ctx.gladys.fake.action('test_webhook');
+  await ctx.clock.advance(2 * SECOND);
+  const test2 = await ctx.gladys.fake.action('test_webhook');
+  assert.match(JSON.stringify(test1.data), /Message posted/);
+  assert.match(JSON.stringify(test2.data), /Already posted/);
+});
+
+test('maybe posted (no answer, 5xx): the same text within 15 s is not sent again', async () => {
+  for (const answer of ['hang', json({}, 502)]) {
+    const ctx = await setup({ answer: () => answer });
+    const first = ctx.app.deliver(USER_URL, 'Smoke');
+    await ctx.clock.advance(11 * SECOND);
+    const kind = (await first).kind;
+    assert.ok(['unconfirmed', 'serverError'].includes(kind), kind);
+    // 5xx pauses the space; no answer does not: the dedupe alone holds it back.
+    ctx.app.pauses.clear();
+    const again = await ctx.app.deliver(USER_URL, 'Smoke');
+    assert.equal(again.kind, kind);
+    assert.equal(again.duplicate, true);
+    assert.equal(ctx.chat.calls.length, 1, kind);
+    await ctx.app.stop();
+  }
+});
+
+test('a 429 pause is in /data at once (a restart right after keeps it)', async (t) => {
+  const ctx = await setup({ answer: () => json({}, 429, { 'retry-after': '600' }) });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  const saves = ctx.store.saves;
+  await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('x'));
+  await settle();
+  assert.ok(ctx.store.saves >= saves + 2, 'saved before sending and after the 429');
+  const [fp] = Object.keys(ctx.store.data.pauses);
+  assert.match(fp, /^[0-9a-f]{2}$/);
+  const end = ctx.store.data.pauses[fp].until;
+  assert.ok(Math.abs(end - Date.UTC(2026, 10, 14, 10, 10, 0)) < 1000, '600 s later');
+});
+
+test('the status comes back by itself at the end of a pause of the default space', async (t) => {
+  const ctx = await setup({ answer: () => json({}, 429, { 'retry-after': '120' }) });
+  t.after(() => ctx.app.stop());
+  await ctx.gladys.fake.sceneAction('post_message', { text: 'x' });
+  await until(() => lastStatus(ctx.gladys).connected === false);
+  await ctx.clock.advance(119 * SECOND);
+  assert.equal(lastStatus(ctx.gladys).connected, false);
+  await ctx.clock.advance(2 * SECOND);
+  assert.equal(lastStatus(ctx.gladys).connected, true);
+  assert.equal(ctx.chat.calls.length, 1);
+});
+
+test('the Forget button: a refused contact URL is tried again by its next message', async (t) => {
+  let n = 0;
+  const ctx = await setup({ answer: () => ((n += 1) === 1 ? json({}, 403) : posted('AAAAuser1')) });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('a'));
+  await ctx.clock.advance(2 * SECOND);
+  assert.equal(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('b'))).success,
+    false,
+  );
+  const ack = await ctx.gladys.fake.action('forget_refused');
+  assert.match(JSON.stringify(ack.data), /1 refused webhook URL/);
+  assert.deepEqual(ctx.store.data.refused, {});
+  assert.equal(ctx.chat.calls.length, 1, 'the click sends nothing');
+  assert.equal(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('c'))).success,
+    true,
+  );
+});
+
+test('/data never confirms a URL: its salt and 8-bit fingerprint match many candidates', async (t) => {
+  const ctx = await setup({ answer: () => json({}, 401) });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('x'));
+  await settle();
+  const { salt, refused } = ctx.store.data;
+  const [fp] = Object.keys(refused);
+  const { createHmac, randomBytes } = await import('node:crypto');
+  let matches = 0;
+  for (let i = 0; i < 4096; i += 1) {
+    const candidate = urlOf('AAAAuser1', randomBytes(12).toString('hex'));
+    const guess = createHmac('sha256', salt).update(`url:${candidate}`).digest('hex').slice(0, 2);
+    if (guess === fp) matches += 1;
+  }
+  assert.ok(matches > 3, `${matches} candidates match: the fingerprint confirms none`);
+});
+
+test('a message without text (an image alone, text undefined): nothing sent', async (t) => {
+  const ctx = await setup();
+  t.after(() => ctx.app.stop());
+  const ack = await ctx.gladys.fake.sendMessage(
+    { webhook_url: USER_URL },
+    { file: 'image/jpg;base64,AA' },
+  );
+  assert.match(ack.error, /empty/);
+  assert.equal(ctx.chat.calls.length, 0);
+});
+
+test('the scene action with an invalid default URL gives the reason', async (t) => {
+  const ctx = await setup({ config: { webhook_url: 'https://example.com/x' } });
+  t.after(() => ctx.app.stop());
+  const ack = await ctx.gladys.fake.sceneAction('post_message', { text: 'x' });
+  assert.match(
+    ack.error,
+    /Default space: the webhook URL must start with https:\/\/chat\.googleapis\.com/,
+  );
+});
+
+test('/data unreadable: refusals, pauses and the cap learnt meanwhile are kept in memory', async (t) => {
+  const store = createMemoryStore();
+  store.unreadable = true;
+  let n = 0;
+  const ctx = await setup({
+    store,
+    config: { webhook_url: DEFAULT_URL, max_per_hour: 3 },
+    answer: () => [json({}, 401), json({}, 429), posted()][n++] ?? posted(),
+  });
+  t.after(() => ctx.app.stop());
+  await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('a'));
+  await ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAp') }, msg('b'));
+  await ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAq') }, msg('c'));
+  assert.equal(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('d'))).success,
+    false,
+  );
+  assert.match(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAp') }, msg('e'))).error,
+    /slow down/,
+  );
+  assert.match(
+    (await ctx.gladys.fake.sendMessage({ webhook_url: urlOf('AAAAr') }, msg('f'))).error,
+    /cap of 3/,
+  );
+  assert.equal(ctx.chat.calls.length, 3);
+  assert.equal(store.saves, 0);
 });

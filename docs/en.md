@@ -50,8 +50,10 @@ stop.
 
 Posts a text in the default space. Optional **thread key**: messages with the
 same key are grouped in one thread (letters, digits and `. _ : -`, 64 at
-most). Outputs for the next actions: `posted` and `message_name` (the name
-Google gives the message).
+most). Outputs for the next actions: `posted`, `deduplicated` and
+`message_name` (the name Google gives the message). When the same text (and
+thread key) was sent to that space less than 15 s earlier and posted, nothing
+is posted again: `posted` is false and `deduplicated` true.
 
 The scene action waits for Google's answer: if the message is refused, or if
 Google does not answer, the action fails and the scene goes on.
@@ -62,30 +64,37 @@ Google does not answer, the action fails and the scene goes on.
   No polling, no background traffic.
 - Gladys writes Markdown; it is turned into the Google Chat syntax: bold,
   italic, strikethrough, code, links `[text](https://…)`, titles become a bold
-  line. Texts longer than 4,096 characters are cut (ending with "…").
+  line. Texts longer than 4,096 characters are cut (ending with "…"), never
+  inside a link or a code block. A mention typed in a text (`<users/all>`)
+  becomes plain `@all`: it never notifies the whole space.
 - **Images are not sent** (a camera snapshot attached to a message): an
   incoming webhook posts text only. The text of the message is still posted.
-- **One message a second per space** (Google's limit): a message waits its turn
-  for up to about 2 s; a burst beyond that is not sent ("too many messages at
-  once").
+- A "space" here is the **Google space** (the `spaces/…` part of the URL),
+  shared by all its webhooks: two users with two webhooks of one space share
+  its limits.
+- **One message every 1.1 s per space** (Google's limit is one a second): a
+  message waits its turn for up to about 2 s; a burst beyond that is not sent
+  ("too many messages at once").
 - **The same text to the same space within 15 s is posted once**: when several
-  users paste the same space, a message Gladys sends to all of them appears
-  once.
+  users receive the same space, a message Gladys sends to all of them appears
+  once. A duplicate gets the outcome of the first message: if the first one
+  failed, the duplicate fails too; it is never said "posted" before the first
+  one is.
 
 ## Never sent twice
 
 A message that may have reached Google is **never sent again**, so the integration
 never posts it twice. What each answer leads to:
 
-| Answer of Google Chat                          | What happens                                                                                                                                                                                                                                                                           |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Posted (200)                                   | Done.                                                                                                                                                                                                                                                                                  |
-| 429 (too many requests)                        | Nothing posted. The space is paused (the delay Google gives, else 1 min, then 2, 4… up to 6 h). During the pause, messages to that space are not sent. The pause survives a restart.                                                                                                   |
-| 401, 403, 404                                  | The URL is **refused**: webhook deleted, token revoked, or webhooks turned off by the administrator. Nothing more is sent to that URL until a new URL is saved, or the **Test** button succeeds (a click tries it again). Kept across restarts as a salted fingerprint, never the URL. |
-| Another 4xx                                    | Nothing posted (the message was rejected); the next message is tried.                                                                                                                                                                                                                  |
-| 5xx                                            | Maybe posted, maybe not: **not sent again**, the space paused like a 429.                                                                                                                                                                                                              |
-| No answer within 10 s                          | Maybe posted: not sent again.                                                                                                                                                                                                                                                          |
-| Network, DNS, certificate error before sending | Nothing sent; the next message is tried.                                                                                                                                                                                                                                               |
+| Answer of Google Chat                          | What happens                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Posted (200)                                   | Done.                                                                                                                                                                                                                                                                                                                                                                                  |
+| 429 (too many requests)                        | Nothing posted. The Google space (all its webhooks) is paused (the delay Google gives, else 1 min, then 2, 4… up to 6 h). During the pause, messages to that space are not sent. The pause survives a restart.                                                                                                                                                                         |
+| 401, 403, 404                                  | The URL is **refused**: webhook deleted, token revoked, or webhooks turned off by the administrator. Nothing more is sent to that URL until a new URL is saved, the **Test** button succeeds (default space), or **Forget the refused webhook URLs** is clicked. Kept across restarts as an 8-bit salted fingerprint, never the URL. Other webhooks of the same space are not refused. |
+| Another 4xx                                    | Nothing posted (the message was rejected); the next message is tried.                                                                                                                                                                                                                                                                                                                  |
+| 5xx                                            | Maybe posted, maybe not: **not sent again**, the space paused like a 429.                                                                                                                                                                                                                                                                                                              |
+| No answer within 10 s                          | Maybe posted: not sent again.                                                                                                                                                                                                                                                                                                                                                          |
+| Network, DNS, certificate error before sending | Nothing sent; the next message is tried.                                                                                                                                                                                                                                                                                                                                               |
 
 Gladys gives a message 5 seconds: the integration answers it within 3.5 s;
 a message still waiting for Google then goes on and its outcome is logged.
@@ -93,9 +102,13 @@ a message still waiting for Google then goes on and its outcome is logged.
 ## Test button
 
 **Test the default space** posts one test message in the default space and
-says what Google answered. It counts in the hourly cap, is not sent during a
-pause like any message, and is the one way to try again a URL that was
-refused.
+says what Google answered. It counts in the hourly cap and is not sent during a
+pause, like any message; a click tries the default URL again even when it was
+refused. Two clicks within 15 s: the second says "Already posted".
+
+**Forget the refused webhook URLs** (administrator) clears every refusal: the
+next message to each refused URL, of the default space or of a user, is tried
+once. The click sends nothing. A user can also save a new URL in "My account".
 
 ## Status
 
@@ -108,6 +121,14 @@ again every 5 s, then less and less often, up to every 5 min).
 
 What leaves Gladys: the text of the messages, to Google Chat
 (`chat.googleapis.com`) only, over HTTPS. A redirect is never followed. What
-`/data/state.json` keeps: a random salt, the salted fingerprints of refused
-URLs, the end dates of the pauses and the times of the messages of the last
-hour (for the hourly cap). Never a URL, a key, a token or a message text.
+`/data/state.json` keeps: a random salt, 8-bit salted fingerprints of the
+refused URLs and of the paused spaces (one URL in 256 shares a fingerprint, so
+the file never confirms a URL; after a restart, a new URL sharing the
+fingerprint of a refused one is held back until the Forget button is clicked),
+the end dates of the pauses and the times of the messages of the last hour
+(for the hourly cap). Never a URL, a key, a token or a message text.
+
+If `/data` cannot be read when the integration starts, messages still go; the
+refusals, pauses and messages learnt since the start are kept in memory, but
+those kept from before the restart are unknown until `/data` is read again
+(every 10 s).

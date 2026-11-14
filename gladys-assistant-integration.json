@@ -12,12 +12,17 @@
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-google-chat/main/cover.png",
   "categories": ["notifications"],
   "transports": ["cloud"],
-  "messaging": { "receive": false },
+  "messaging": {
+    "receive": false
+  },
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Google Chat in Gladys", "fr": "Google Chat dans Gladys" },
+      "label": {
+        "en": "Google Chat in Gladys",
+        "fr": "Google Chat dans Gladys"
+      },
       "description": {
         "en": "Unofficial connector, not affiliated with Google. Send only: Gladys posts in a Google Chat space, nothing is read back. Incoming webhooks need a Google Workspace Business or Enterprise account, and the Workspace administrator must allow users to add webhooks; a free personal Google account cannot create one. In the space: name of the space → Apps & integrations → Webhooks → Add webhook, then copy its URL. Each Gladys user pastes the URL of their space in “My account” to receive the messages Gladys sends them; the default space below serves the “Post in Google Chat” scene action and the Test button. Nothing is ever sent without a Gladys message, a scene or a click.",
         "fr": "Connecteur non officiel, sans lien avec Google. Envoi seul : Gladys publie dans un espace Google Chat, rien n’est relu. Les webhooks entrants demandent un compte Google Workspace Business ou Enterprise, et l’administrateur Workspace doit autoriser les utilisateurs à ajouter des webhooks ; un compte Google personnel gratuit ne peut pas en créer. Dans l’espace : nom de l’espace → Applications et intégrations → Webhooks → Ajouter un webhook, puis copiez son URL. Chaque utilisateur de Gladys colle l’URL de son espace dans « Mon compte » pour recevoir les messages que Gladys lui envoie ; l’espace par défaut ci-dessous sert à l’action de scène « Publier dans Google Chat » et au bouton Tester. Rien n’est jamais envoyé sans un message de Gladys, une scène ou un clic."
@@ -25,15 +30,24 @@
       "links": [
         {
           "url": "https://developers.google.com/workspace/chat/quickstart/webhooks",
-          "label": { "en": "Google: incoming webhooks", "fr": "Google : webhooks entrants" }
+          "label": {
+            "en": "Google: incoming webhooks",
+            "fr": "Google : webhooks entrants"
+          }
         },
         {
           "url": "https://github.com/LM1LC3N7/gladys-google-chat/blob/main/docs/fr.md",
-          "label": { "en": "Guide (French)", "fr": "Guide (français)" }
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
         },
         {
           "url": "https://github.com/LM1LC3N7/gladys-google-chat/blob/main/docs/en.md",
-          "label": { "en": "Guide (English)", "fr": "Guide (anglais)" }
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
         }
       ]
     },
@@ -53,7 +67,10 @@
     {
       "key": "max_per_hour",
       "type": "number",
-      "label": { "en": "Messages per hour, at most", "fr": "Messages par heure, au plus" },
+      "label": {
+        "en": "Messages per hour, at most",
+        "fr": "Messages par heure, au plus"
+      },
       "description": {
         "en": "All spaces together, the Test button included. Beyond it, a message is not sent (it is logged). Google Chat itself takes one message a second per space.",
         "fr": "Tous les espaces ensemble, bouton Tester compris. Au-delà, un message n’est pas envoyé (c’est écrit dans les journaux). Google Chat prend lui-même un message par seconde et par espace."
@@ -68,16 +85,22 @@
     {
       "key": "my_space",
       "type": "section",
-      "label": { "en": "My Google Chat space", "fr": "Mon espace Google Chat" },
+      "label": {
+        "en": "My Google Chat space",
+        "fr": "Mon espace Google Chat"
+      },
       "description": {
-        "en": "Paste the webhook URL of the space where you want the messages Gladys sends you (Google Workspace Business or Enterprise only). Clear it to stop. Several users may paste the same space: a message identical to one posted there less than 15 s earlier is posted once.",
-        "fr": "Collez l’URL du webhook de l’espace où vous voulez recevoir les messages que Gladys vous envoie (Google Workspace Business ou Enterprise seulement). Videz-la pour arrêter. Plusieurs utilisateurs peuvent coller le même espace : un message identique à un autre publié là il y a moins de 15 s n’est publié qu’une fois."
+        "en": "Paste the webhook URL of the space where you want the messages Gladys sends you (Google Workspace Business or Enterprise only). Clear it to stop. Several users may use the same space, even through different webhooks: a message identical to one sent to that space less than 15 s earlier is posted once.",
+        "fr": "Collez l’URL du webhook de l’espace où vous voulez recevoir les messages que Gladys vous envoie (Google Workspace Business ou Enterprise seulement). Videz-la pour arrêter. Plusieurs utilisateurs peuvent utiliser le même espace, même par des webhooks différents : un message identique à un autre envoyé à cet espace il y a moins de 15 s n’est publié qu’une fois."
       }
     },
     {
       "key": "webhook_url",
       "type": "secret",
-      "label": { "en": "Webhook URL of my space", "fr": "URL du webhook de mon espace" },
+      "label": {
+        "en": "Webhook URL of my space",
+        "fr": "URL du webhook de mon espace"
+      },
       "description": {
         "en": "Kept by Gladys in its database, never shown again, sent only to Google Chat, never written in the logs.",
         "fr": "Gardée par Gladys dans sa base, jamais réaffichée, envoyée seulement à Google Chat, jamais écrite dans les journaux."
@@ -89,20 +112,38 @@
     {
       "key": "test_webhook",
       "timeout_seconds": 20,
-      "label": { "en": "Test the default space", "fr": "Tester l’espace par défaut" },
+      "label": {
+        "en": "Test the default space",
+        "fr": "Tester l’espace par défaut"
+      },
       "description": {
         "en": "Posts one test message in the default space. A URL refused earlier is tried again by this click.",
         "fr": "Publie un message de test dans l’espace par défaut. Une URL refusée auparavant est réessayée par ce clic."
+      }
+    },
+    {
+      "key": "forget_refused",
+      "timeout_seconds": 15,
+      "label": {
+        "en": "Forget the refused webhook URLs",
+        "fr": "Oublier les URL de webhook refusées"
+      },
+      "description": {
+        "en": "A URL refused by Google Chat (401, 403, 404) is no longer used. After this click, the next message to each refused URL (of the default space or of a user) is tried once. Nothing is sent by the click itself.",
+        "fr": "Une URL refusée par Google Chat (401, 403, 404) n’est plus utilisée. Après ce clic, le prochain message vers chaque URL refusée (de l’espace par défaut ou d’un utilisateur) est essayé une fois. Le clic lui-même n’envoie rien."
       }
     }
   ],
   "scene_actions": [
     {
       "key": "post_message",
-      "label": { "en": "Post in Google Chat", "fr": "Publier dans Google Chat" },
+      "label": {
+        "en": "Post in Google Chat",
+        "fr": "Publier dans Google Chat"
+      },
       "description": {
-        "en": "Posts a text in the default space of the configuration. Markdown is turned into the Google Chat syntax; 4,096 characters at most. Never sent twice: a failure fails this action only.",
-        "fr": "Publie un texte dans l’espace par défaut de la configuration. Le Markdown est converti en syntaxe Google Chat ; 4 096 caractères au plus. Jamais envoyé deux fois : un échec fait échouer cette action seulement."
+        "en": "Posts a text in the default space (Markdown turned into the Google Chat syntax, 4,096 characters at most). Never sent twice: the same text sent to the same space less than 15 s earlier is not posted again (output Deduplicated, Posted false); a failure fails this action only.",
+        "fr": "Publie un texte dans l’espace par défaut (Markdown converti en syntaxe Google Chat, 4 096 caractères au plus). Jamais envoyé deux fois : le même texte envoyé au même espace moins de 15 s avant n’est pas republié (sortie Dédoublonné, Publié à faux) ; un échec fait échouer cette action seulement."
       },
       "timeout_seconds": 20,
       "fields": [
@@ -110,7 +151,10 @@
           "key": "text",
           "type": "string",
           "required": true,
-          "label": { "en": "Text", "fr": "Texte" }
+          "label": {
+            "en": "Text",
+            "fr": "Texte"
+          }
         },
         {
           "key": "thread_key",
@@ -120,19 +164,36 @@
             "en": "Thread key (optional: the same key groups the messages in one thread)",
             "fr": "Clé de fil (facultatif : la même clé regroupe les messages dans un fil)"
           },
-          "placeholder": { "en": "alarm", "fr": "alarme" }
+          "placeholder": {
+            "en": "alarm",
+            "fr": "alarme"
+          }
         }
       ],
       "outputs": [
         {
           "key": "posted",
           "type": "boolean",
-          "label": { "en": "Message posted", "fr": "Message publié" }
+          "label": {
+            "en": "Message posted",
+            "fr": "Message publié"
+          }
+        },
+        {
+          "key": "deduplicated",
+          "type": "boolean",
+          "label": {
+            "en": "Deduplicated (already posted less than 15 s ago)",
+            "fr": "Dédoublonné (déjà publié il y a moins de 15 s)"
+          }
         },
         {
           "key": "message_name",
           "type": "string",
-          "label": { "en": "Google Chat message name", "fr": "Nom du message Google Chat" }
+          "label": {
+            "en": "Google Chat message name",
+            "fr": "Nom du message Google Chat"
+          }
         }
       ]
     }

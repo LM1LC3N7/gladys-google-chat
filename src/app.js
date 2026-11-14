@@ -3,14 +3,18 @@
 // go through `deliver()`, which decides, in this order, with ONE reading of
 // the monotonic clock:
 //
-//   URL checked -> text not empty -> URL not refused before -> space not paused
-//   -> same text not posted in this space for 15 s -> hourly cap -> a slot in
-//   the space (one message a second, a short wait at most)
+//   URL checked -> text not empty -> URL not refused before -> Google space
+//   not paused -> same text to that space within 15 s: the first message's
+//   outcome -> hourly cap -> a slot in the space (one message every 1.1 s, a
+//   short wait at most)
 //
-// then posts ONCE. Nothing is ever sent again on its own: a 429 or a 5xx
-// pauses the space, a 401/403/404 marks the URL refused (salted fingerprint in
-// /data) until a new URL is saved or the Test button succeeds. Nothing is sent
-// without a Gladys message, a scene or a click: no polling, no receiving.
+// then posts ONCE. A "space" is the Google space (`spaces/<id>`), shared by
+// all its webhooks: Google's one-a-second limit and its 429 are per space. A
+// refusal (401/403/404) is per webhook URL (its token). Nothing is ever sent
+// again on its own: a 429 or a 5xx pauses the space, a refused URL is not used
+// until it changes, the Test button succeeds or the Forget button is clicked.
+// /data keeps 8-bit salted fingerprints only. Nothing is sent without a Gladys
+// message, a scene or a click: no polling, no receiving.
 //
 // Clocks: `monotonic` decides (pauses, cap, slots, dedupe); `now` (wall) only
 // dates what /data keeps, brought back onto the monotonic clock at load.
@@ -27,7 +31,6 @@ import {
   MINUTE,
   PAUSE_MAX,
   PAUSE_MIN,
-  QUEUE_MAX,
   QUEUE_WAIT_MAX,
   RATE_WINDOW,
   SEND_BUDGET,
@@ -42,8 +45,14 @@ const defaultTimers = { setTimeout, clearTimeout };
 
 /** Outcomes after which the message may be in the space. */
 const MAYBE_POSTED = new Set(['posted', 'serverError', 'unconfirmed']);
+/** Outcomes after which nothing is in the space for sure. */
+const NOTHING_POSTED = new Set(['blocked', 'refused', 'rejected', 'rateLimited', 'notSent']);
 
-/** A message refused before anything left: `{ sent: false, reason, values }`. */
+/** Fingerprints kept in /data: 8 bits (2 hex), salted. */
+const FP_HEX = 2;
+const FP = /^[0-9a-f]{2}$/;
+
+/** A message refused before anything left. */
 const notSent = (reason, values = {}) => ({ kind: 'blocked', reason, values });
 
 const minutesOf = (ms) => Math.max(1, Math.ceil(ms / MINUTE));
@@ -60,6 +69,7 @@ function invalidText(code) {
 /** The text of an outcome, `{ en, fr }`. */
 export function describe(outcome) {
   if (outcome.kind === 'blocked') return t(outcome.reason, outcome.values);
+  if (outcome.kind === 'duplicate') return t('duplicate');
   if (outcome.kind === 'rateLimited')
     return t('rateLimited', { minutes: minutesOf(outcome.pauseMs) });
   return t(outcome.kind, { status: outcome.status });
@@ -121,16 +131,16 @@ export class GoogleChatApp {
     /** fingerprint -> { due, until, backoff }, read from /data. */
     this.keptPauses = new Map();
 
-    // The same, learnt since the start, keyed by the URL (memory only).
-    /** url -> { status, at } */
+    // The same, learnt since the start (memory only, kept even when /data is unreadable).
+    /** url -> { status, at } (a refusal is per webhook URL: its token) */
     this.refused = new Map();
-    /** url -> { due, until, backoff } */
+    /** Google space id -> { due, until, backoff } */
     this.pauses = new Map();
-    /** url -> backoff of the last pause, reset by a posted message */
+    /** Google space id -> backoff of the last pause, reset by a posted message */
     this.backoffs = new Map();
     /** Monotonic times of the messages of the last hour, all spaces. */
     this.sends = [];
-    /** url -> { next (monotonic slot), waiting, recent: Map<textHash, mono> } */
+    /** Google space id -> { next (monotonic slot), recent: Map<textHash, { at, job }>, sleepers } */
     this.spaces = new Map();
     /** The deliveries in flight (tests and shutdown wait for them). */
     this.inflight = new Set();
@@ -193,7 +203,7 @@ export class GoogleChatApp {
     this.configRead = true;
     if (this.config.webhook?.url !== previous) this.lastDefaultOutcome = undefined;
     this.logger.info(
-      `Configuration: default space ${this.config.webhook ? (this.config.webhook.url ? this.label(this.config.webhook.url) : 'invalid') : 'none'}, ${this.config.maxPerHour} messages per hour at most`,
+      `Configuration: default space ${this.config.webhook ? (this.config.webhook.url ? this.label(this.config.webhook.space) : 'invalid') : 'none'}, ${this.config.maxPerHour} messages per hour at most`,
     );
     await this.refreshStatus(generation);
   }
@@ -272,12 +282,12 @@ export class GoogleChatApp {
     this.salt = salt ?? this.random(16).toString('hex');
     if (salt) {
       for (const [fp, entry] of Object.entries(data.refused ?? {})) {
-        if (/^[0-9a-f]{32}$/.test(fp) && Number.isInteger(entry?.status)) {
+        if (FP.test(fp) && Number.isInteger(entry?.status)) {
           this.keptRefused.set(fp, { status: entry.status, at: entry.at });
         }
       }
       for (const [fp, entry] of Object.entries(data.pauses ?? {})) {
-        const pause = /^[0-9a-f]{32}$/.test(fp) ? keptPause(entry, now, mono) : undefined;
+        const pause = FP.test(fp) ? keptPause(entry, now, mono) : undefined;
         if (pause) this.keptPauses.set(fp, pause);
       }
     }
@@ -292,9 +302,14 @@ export class GoogleChatApp {
     this.refreshStatus(this.generation).catch(() => {});
   }
 
-  fingerprint(url) {
+  /**
+   * A salted fingerprint of 8 bits (2 hex): about one URL in 256 shares it, so
+   * /data and its salt never confirm a candidate URL. Collisions are tolerated:
+   * they only matter after a restart, and the "Forget" button clears them.
+   */
+  fingerprint(kind, value) {
     return this.salt
-      ? createHmac('sha256', this.salt).update(url).digest('hex').slice(0, 32)
+      ? createHmac('sha256', this.salt).update(`${kind}:${value}`).digest('hex').slice(0, FP_HEX)
       : undefined;
   }
 
@@ -304,13 +319,15 @@ export class GoogleChatApp {
     const now = this.now();
     const mono = this.monotonic();
     const refused = Object.fromEntries(this.keptRefused);
-    for (const [url, entry] of this.refused) refused[this.fingerprint(url)] = entry;
+    for (const [url, entry] of this.refused) refused[this.fingerprint('url', url)] = entry;
     const pauses = {};
-    for (const [fp, p] of this.keptPauses)
-      if (p.due > mono) pauses[fp] = { until: p.until, backoff: p.backoff };
-    for (const [url, p] of this.pauses) {
-      if (p.due > mono) pauses[this.fingerprint(url)] = { until: p.until, backoff: p.backoff };
-    }
+    const keep = (fp, p) => {
+      if (p.due > mono && !(pauses[fp]?.until > p.until)) {
+        pauses[fp] = { until: p.until, backoff: p.backoff };
+      }
+    };
+    for (const [fp, p] of this.keptPauses) keep(fp, p);
+    for (const [space, p] of this.pauses) keep(this.fingerprint('space', space), p);
     const sends = this.sends
       .filter((at) => at > mono - RATE_WINDOW)
       .map((at) => Math.round(now - (mono - at)));
@@ -319,50 +336,51 @@ export class GoogleChatApp {
       .catch((err) => this.logger.warn(`/data not written (${err?.code ?? err?.name ?? 'error'})`));
   }
 
-  // --- State of a URL --------------------------------------------------------------
+  // --- State of a URL and of a space -------------------------------------------------
 
-  label(url) {
-    return `space #${createHmac('sha256', this.runSalt).update(url).digest('hex').slice(0, 6)}`;
+  /** Log label of a Google space: a short fingerprint salted per run, never its id. */
+  label(space) {
+    return `space #${createHmac('sha256', this.runSalt).update(space).digest('hex').slice(0, 6)}`;
   }
 
+  /** A URL refused (401/403/404): the exact URL in memory, its 8-bit fingerprint from /data. */
   refusalOf(url) {
     return (
-      this.refused.get(url) ?? (this.salt ? this.keptRefused.get(this.fingerprint(url)) : undefined)
+      this.refused.get(url) ??
+      (this.salt ? this.keptRefused.get(this.fingerprint('url', url)) : undefined)
     );
   }
 
   clearRefusal(url) {
     const had = this.refused.delete(url);
-    const fp = this.fingerprint(url);
+    const fp = this.fingerprint('url', url);
     if ((fp && this.keptRefused.delete(fp)) || had) this.save();
   }
 
-  /** The pause of a space still running at `mono`, or undefined. */
-  pauseOf(url, mono) {
-    const own = this.pauses.get(url);
-    const kept = this.salt ? this.keptPauses.get(this.fingerprint(url)) : undefined;
+  /** The pause of a Google space still running at `mono`, or undefined. */
+  pauseOf(space, mono) {
+    const own = this.pauses.get(space);
+    const kept = this.salt ? this.keptPauses.get(this.fingerprint('space', space)) : undefined;
     const due = Math.max(own?.due ?? -Infinity, kept?.due ?? -Infinity);
-    return due > mono
-      ? { due, backoff: Math.max(own?.backoff ?? 0, kept?.backoff ?? 0) }
-      : undefined;
+    return due > mono ? { due } : undefined;
   }
 
-  pause(url, retryAfter, mono) {
-    const previous = this.backoffs.get(url) ?? 0;
+  pause(space, retryAfter, mono) {
+    const previous = this.backoffs.get(space) ?? 0;
     const backoff = Math.min(PAUSE_MAX, previous ? previous * 2 : PAUSE_MIN);
     const ms = Math.min(PAUSE_MAX, Math.max(PAUSE_MIN, retryAfter ?? backoff));
-    this.backoffs.set(url, backoff);
-    this.pauses.set(url, { due: mono + ms, until: this.now() + ms, backoff });
+    this.backoffs.set(space, backoff);
+    this.pauses.set(space, { due: mono + ms, until: this.now() + ms, backoff });
     return ms;
   }
 
-  spaceOf(url) {
-    let space = this.spaces.get(url);
-    if (!space) {
-      space = { next: -Infinity, waiting: 0, recent: new Map(), sleepers: new Set() };
-      this.spaces.set(url, space);
+  spaceOf(space) {
+    let entry = this.spaces.get(space);
+    if (!entry) {
+      entry = { next: -Infinity, recent: new Map(), sleepers: new Set() };
+      this.spaces.set(space, entry);
     }
-    return space;
+    return entry;
   }
 
   // --- Sending ------------------------------------------------------------------
@@ -383,58 +401,72 @@ export class GoogleChatApp {
     if (this.stopped) return notSent('stopped');
     const parsed = parseWebhookUrl(rawUrl);
     if (parsed.error) return notSent(parsed.error);
-    const url = parsed.url;
+    const { url, space: spaceId } = parsed;
     const text = toChatText(markdown);
     if (!text) return notSent('emptyText');
-    const label = this.label(url);
+    const label = this.label(spaceId);
 
     const mono = this.monotonic();
     const refusal = this.refusalOf(url);
     if (refusal && !force) return notSent('refusedEarlier', { status: refusal.status });
-    const paused = this.pauseOf(url, mono);
+    const paused = this.pauseOf(spaceId, mono);
     if (paused) return notSent('paused', { minutes: minutesOf(paused.due - mono) });
-    const space = this.spaceOf(url);
+    const space = this.spaceOf(spaceId);
     const hash = createHash('sha256')
       .update(text)
       .update('\u0000')
       .update(threadKey ?? '')
       .digest('hex');
-    for (const [key, at] of space.recent) if (at <= mono - DEDUPE_WINDOW) space.recent.delete(key);
-    if (space.recent.has(hash)) {
-      this.logger.info(`Same message to ${label} less than 15 s ago: not posted twice`);
-      return { kind: 'duplicate' };
+    for (const [key, entry] of space.recent) {
+      if (entry.at <= mono - DEDUPE_WINDOW) space.recent.delete(key);
+    }
+    const earlier = space.recent.get(hash);
+    if (earlier) {
+      // The same text to the same space within 15 s (users sharing a space):
+      // never sent twice, and never "posted" before the first one is.
+      this.logger.info(
+        `Same message to ${label} less than 15 s ago: the first one's outcome is used`,
+      );
+      const first = await earlier.job;
+      return first.kind === 'posted'
+        ? { kind: 'duplicate', name: first.name }
+        : { ...first, duplicate: true };
     }
     while (this.sends.length && this.sends[0] <= mono - RATE_WINDOW) this.sends.shift();
     if (this.sends.length >= this.config.maxPerHour) {
       return notSent('capReached', { max: this.config.maxPerHour });
     }
     const slot = Math.max(mono, space.next);
-    if (space.waiting >= QUEUE_MAX || slot - mono > QUEUE_WAIT_MAX) return notSent('spaceBusy');
+    if (slot - mono > QUEUE_WAIT_MAX) return notSent('spaceBusy');
 
-    // Reserved: the cap counts it, the dedupe knows it, the slot is taken.
+    // Reserved: the cap counts it, the slot is taken, the dedupe knows it.
     space.next = slot + SPACE_GAP;
     this.sends.push(slot);
-    space.recent.set(hash, slot);
+    const job = this.transmit({ url, spaceId, space, slot, mono, text, threadKey, force, label });
+    const entry = { at: slot, job };
+    space.recent.set(hash, entry);
+    const outcome = await job;
+    // Nothing posted: the dedupe forgets it (a later identical message may go).
+    if (!MAYBE_POSTED.has(outcome.kind) && space.recent.get(hash) === entry) {
+      space.recent.delete(hash);
+    }
+    return outcome;
+  }
+
+  async transmit({ url, spaceId, space, slot, mono, text, threadKey, force, label }) {
     const release = () => {
       const i = this.sends.lastIndexOf(slot);
       if (i >= 0) this.sends.splice(i, 1);
-      if (space.recent.get(hash) === slot) space.recent.delete(hash);
     };
-
     if (slot > mono) {
-      space.waiting += 1;
-      try {
-        // A timer may fire a hair early: never before the slot.
-        for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {
-          await this.sleep(space, left);
-        }
-      } finally {
-        space.waiting -= 1;
+      // A timer may fire a hair early: never before the slot.
+      for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {
+        await this.sleep(space, left);
       }
       // Things may have changed while waiting: an earlier message refused or paused.
       const later = this.monotonic();
       const refusedNow = this.refusalOf(url);
-      const pausedNow = this.pauseOf(url, later);
+      const pausedNow = this.pauseOf(spaceId, later);
       if (this.stopped || (refusedNow && !force) || pausedNow) {
         release();
         if (this.stopped) return notSent('stopped');
@@ -453,19 +485,15 @@ export class GoogleChatApp {
       stopSignal: this.stopper.signal,
     });
     const after = this.monotonic();
-    if (!MAYBE_POSTED.has(outcome.kind)) {
-      // Nothing posted: the dedupe forgets it (a later identical message may go).
-      if (space.recent.get(hash) === slot) space.recent.delete(hash);
-    }
     switch (outcome.kind) {
       case 'posted':
-        this.backoffs.delete(url);
+        this.backoffs.delete(spaceId);
         if (force) this.clearRefusal(url);
         this.logger.info(`Message posted to ${label}`);
         break;
       case 'rateLimited':
       case 'serverError': {
-        outcome.pauseMs = this.pause(url, outcome.retryAfter, after);
+        outcome.pauseMs = this.pause(spaceId, outcome.retryAfter, after);
         this.save();
         this.logger.warn(
           `${label}: HTTP ${outcome.status}, ${outcome.kind === 'serverError' ? 'maybe posted, not sent again' : 'nothing posted'}; paused ${minutesOf(outcome.pauseMs)} min`,
@@ -488,8 +516,8 @@ export class GoogleChatApp {
       default:
         this.logger.warn(`${label}: Google Chat unreachable (${outcome.reason}), nothing sent`);
     }
-    if (url === this.config.webhook?.url) {
-      this.lastDefaultOutcome = outcome.kind;
+    if (url === this.config.webhook?.url || spaceId === this.config.webhook?.space) {
+      if (url === this.config.webhook?.url) this.lastDefaultOutcome = outcome.kind;
       this.refreshStatus(this.generation).catch(() => {});
     }
     return outcome;
@@ -508,13 +536,13 @@ export class GoogleChatApp {
     });
   }
 
-  // --- The three ways in -----------------------------------------------------------
+  // --- The ways in -----------------------------------------------------------------
 
   /**
    * onSendMessage: Gladys sends a message to a user; `contact` is their
    * "My account" values. Answered within 3.5 s (Gladys waits 5 s): a message
    * still without an answer then goes on, its outcome logged. Throws only
-   * when nothing was sent (Gladys logs it); never sent again.
+   * when nothing was posted for sure (Gladys logs it); never sent again.
    */
   async sendMessage(contact, message) {
     if (message?.file) {
@@ -535,25 +563,25 @@ export class GoogleChatApp {
       );
       return;
     }
-    if (outcome.kind === 'blocked' || outcome.kind === 'refused' || outcome.kind === 'rejected') {
-      throw new Error(describe(outcome).en);
-    }
-    if (outcome.kind === 'rateLimited' || outcome.kind === 'notSent')
-      throw new Error(describe(outcome).en);
+    if (NOTHING_POSTED.has(outcome.kind)) throw new Error(describe(outcome).en);
   }
 
   /** Scene action: posts to the default space, waits for the answer of Google. */
   async postMessage(fields = {}) {
-    if (!this.config.webhook) throw new Error(en('noDefault'));
+    const webhook = this.config.webhook;
+    if (!webhook) throw new Error(en('noDefault'));
+    if (webhook.error) throw new Error(invalidText(webhook.error).en);
     const threadKey = threadKeyOf(fields.thread_key);
     if (threadKey === null) {
       throw new Error('Thread key: letters, digits and . _ : - only, 64 at most; nothing sent.');
     }
-    const outcome = await this.deliver(this.config.webhook.url ?? '', fields.text ?? '', {
-      threadKey,
-    });
-    if (outcome.kind === 'posted') return { posted: true, message_name: outcome.name ?? '' };
-    if (outcome.kind === 'duplicate') return { posted: true, message_name: '' };
+    const outcome = await this.deliver(webhook.url, fields.text ?? '', { threadKey });
+    if (outcome.kind === 'posted') {
+      return { posted: true, deduplicated: false, message_name: outcome.name ?? '' };
+    }
+    if (outcome.kind === 'duplicate') {
+      return { posted: false, deduplicated: true, message_name: outcome.name ?? '' };
+    }
     throw new Error(describe(outcome).en);
   }
 
@@ -566,6 +594,17 @@ export class GoogleChatApp {
     const text = `${en('testText')} / ${t('testText').fr} (${stamp} UTC)`;
     const outcome = await this.deliver(this.config.webhook.url, text, { force: true });
     return describe(outcome);
+  }
+
+  /** The "Forget" button: every refused URL is tried again by its next message. */
+  forgetRefused() {
+    const count = this.refused.size + this.keptRefused.size;
+    this.refused.clear();
+    this.keptRefused.clear();
+    this.save();
+    this.refreshStatus(this.generation).catch(() => {});
+    this.logger.info(`Refused webhook URLs forgotten (${count})`);
+    return t('forgotten', { count });
   }
 
   // --- Status -------------------------------------------------------------------------
@@ -591,7 +630,7 @@ export class GoogleChatApp {
     if (refusal)
       return this.setStatus(false, t('defaultRefused', { status: refusal.status }), generation);
     const mono = this.monotonic();
-    const paused = this.pauseOf(webhook.url, mono);
+    const paused = this.pauseOf(webhook.space, mono);
     if (paused) {
       // The status comes back by itself when the pause ends.
       this.timers.clearTimeout(this.statusTimer);

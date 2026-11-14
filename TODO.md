@@ -30,15 +30,22 @@
   the scene action never takes a URL (a scene field is not a secret).
 - Never sent again: 5xx and no answer count as "maybe posted"; a 429 or 5xx
   pauses the space (Retry-After, else 1 min doubling to 6 h); 401/403/404
-  refuse the URL (salted fingerprint in /data) until it changes or the Test
+  refuse the URL (8-bit salted fingerprint in /data) until it changes, the
+  Forget button or the Test
   button succeeds. A 400 is not a refusal of the URL.
 - Hourly cap (60 by default, 1 to 600) over all spaces, Test included,
   counted at the reservation (a message that may have left counts), kept in
   /data; beyond it, a message is refused, never queued.
-- One message every 1.1 s per space; a message is refused when its turn is
+- One message every 1.1 s per Google space; a message is refused when its turn is
   more than 2.3 s away (Gladys acks a message within 5 s; the integration
   answers within 3.5 s).
-- The same text (and thread key) to the same space within 15 s is posted
-  once (users sharing a space, Gladys broadcasting to all admins).
-- Markdown converted to the Chat syntax (`MARKUP_SYNTAX_CHAT`), not the
-  newer Markdown option, documented for apps rather than webhooks.
+- Markdown converted to the classic Chat syntax (`*bold*`, `<url|text>`);
+  the body sent is `{ text }` (plus `thread` with a thread key), nothing else.
+- Fingerprints in /data are 8 bits (2 hex), salted (review r1): a collision
+  after a restart holds back a new URL until the Forget button; tolerated.
+- Pauses, slots and dedupe per Google space (`spaces/<id>`, shared by its
+  webhooks); refusals per webhook URL (its token).
+- A duplicate within 15 s waits for the first message and takes its outcome;
+  after a posted one, the scene action answers `posted: false`,
+  `deduplicated: true`.
+- Mentions typed in a text (`<users/…>`) are turned into plain `@…`.

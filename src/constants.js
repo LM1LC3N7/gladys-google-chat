@@ -5,7 +5,7 @@
 export const VERSION = '0.1.0';
 export const USER_AGENT = `gladys-google-chat/${VERSION} (+https://github.com/LM1LC3N7/gladys-google-chat)`;
 
-export const ACTIONS = { TEST: 'test_webhook' };
+export const ACTIONS = { TEST: 'test_webhook', FORGET: 'forget_refused' };
 export const SCENE_ACTIONS = { POST: 'post_message' };
 
 export const SECOND = 1000;
@@ -16,8 +16,6 @@ export const HOUR = 60 * MINUTE;
 export const SEND_BUDGET = 3500;
 /** A message whose turn in its space comes later than this is not queued. */
 export const QUEUE_WAIT_MAX = 2300;
-/** At most this many messages wait for one space. */
-export const QUEUE_MAX = 4;
 /** Google Chat: one message per second per space (shared by its webhooks). */
 export const SPACE_GAP = 1100;
 /** One request: connection, sending and answer. */
@@ -35,7 +33,7 @@ export const RATE_MIN = 1;
 export const RATE_MAX = 600;
 export const RATE_WINDOW = HOUR;
 
-/** Same text to the same space within this delay: posted once (shared spaces). */
+/** Same text to the same Google space within this delay: posted once (shared spaces). */
 export const DEDUPE_WINDOW = 15 * SECOND;
 
 /** Pauses after a 429 or a 5xx: Retry-After when given, bounded. */

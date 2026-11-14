@@ -153,12 +153,16 @@ test('the action and the scene action are those the code handles; no device, no 
     Object.values(SCENE_ACTIONS),
   );
   assert.ok(handlers.includes('onAction(ACTIONS.TEST'));
+  assert.ok(handlers.includes('onAction(ACTIONS.FORGET'));
   assert.ok(handlers.includes('onSceneAction(SCENE_ACTIONS.POST'));
   assert.ok(handlers.includes('onSendMessage('));
   for (const a of [...manifest.actions, ...manifest.scene_actions]) {
     assert.ok(a.timeout_seconds >= 15 && a.timeout_seconds <= 120, a.key);
   }
   const [scene] = manifest.scene_actions;
+  // The 15 s dedupe is said where the scene is built.
+  for (const lang of ['en', 'fr']) assert.match(scene.description[lang], /15 s/);
+  assert.match(read('README.md'), /15 s/);
   assert.deepEqual(
     scene.fields.map((f) => f.key),
     ['text', 'thread_key'],
@@ -168,6 +172,7 @@ test('the action and the scene action are those the code handles; no device, no 
     scene.outputs.map((o) => [o.key, o.type]),
     [
       ['posted', 'boolean'],
+      ['deduplicated', 'boolean'],
       ['message_name', 'string'],
     ],
   );

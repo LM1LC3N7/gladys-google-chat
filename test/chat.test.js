@@ -134,6 +134,28 @@ test('Retry-After: seconds, or a date against the Date of the answer (never our 
   assert.equal(retryAfterMs(h({})), undefined);
 });
 
+test('readBounded: 64 KB by default', async () => {
+  assert.equal((await readBounded(new Response('x'.repeat(64 * 1024)))).length, 64 * 1024);
+  assert.equal(await readBounded(new Response('x'.repeat(64 * 1024 + 1))), null);
+});
+
+test('a message name not in the Google form is not passed on', async (t) => {
+  let body = { name: 'spaces/AAAA/messages/../../x' };
+  const srv = await server((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  });
+  t.after(() => srv.close());
+  assert.equal((await postMessage({ fetch, url: srv.url, text: 'a' })).name, undefined);
+  body = { name: `spaces/AAAA/messages/${'a'.repeat(200)}` };
+  assert.equal((await postMessage({ fetch, url: srv.url, text: 'a' })).name, undefined);
+  body = { name: 'spaces/AAAA/messages/ok.1' };
+  assert.equal(
+    (await postMessage({ fetch, url: srv.url, text: 'a' })).name,
+    'spaces/AAAA/messages/ok.1',
+  );
+});
+
 test('readBounded: at most the bound', async () => {
   assert.equal(await readBounded(new Response('abc'), 3), 'abc');
   assert.equal(await readBounded(new Response('abcd'), 3), null);

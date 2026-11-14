@@ -10,10 +10,16 @@ import { RATE_DEFAULT } from '../src/constants.js';
 import { DEFAULT_URL, KEY, TOKEN } from './helpers/app.js';
 
 test('a Google Chat webhook URL is accepted, rebuilt from its parts', () => {
-  assert.deepEqual(parseWebhookUrl(DEFAULT_URL), { url: DEFAULT_URL });
-  assert.deepEqual(parseWebhookUrl(`  ${DEFAULT_URL}\n`), { url: DEFAULT_URL });
+  const parsed = { url: DEFAULT_URL, space: 'AAAAdefault' };
+  assert.deepEqual(parseWebhookUrl(DEFAULT_URL), parsed);
+  assert.deepEqual(parseWebhookUrl(`  ${DEFAULT_URL}\n`), parsed);
+  // A user name or password in the URL is never passed on (refused).
+  assert.equal(
+    parseWebhookUrl(DEFAULT_URL.replace('https://', 'https://user:pw@')).error,
+    'notGoogleChat',
+  );
   const swapped = `https://chat.googleapis.com/v1/spaces/AAAAdefault/messages?token=${TOKEN}&key=${KEY}`;
-  assert.deepEqual(parseWebhookUrl(swapped), { url: DEFAULT_URL });
+  assert.deepEqual(parseWebhookUrl(swapped), parsed);
 });
 
 test('anything else is refused with a code, never the URL', () => {
@@ -63,7 +69,10 @@ test('the configuration: defaults, bounds, empty and decimal values', () => {
   assert.equal(normalizeConfig({ max_per_hour: 2.5 }).maxPerHour, 60);
   assert.equal(normalizeConfig({ max_per_hour: ' 12 ' }).maxPerHour, 12);
   assert.equal(normalizeConfig({ max_per_hour: 'ten' }).maxPerHour, 60);
-  assert.deepEqual(normalizeConfig({ webhook_url: DEFAULT_URL }).webhook, { url: DEFAULT_URL });
+  assert.deepEqual(normalizeConfig({ webhook_url: DEFAULT_URL }).webhook, {
+    url: DEFAULT_URL,
+    space: 'AAAAdefault',
+  });
   assert.deepEqual(normalizeConfig({ webhook_url: 'nope' }).webhook, { error: 'badUrl' });
   assert.equal(normalizeConfig({ webhook_url: '  ' }).webhook, null);
 });

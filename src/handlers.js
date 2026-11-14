@@ -13,8 +13,9 @@ export function registerHandlers(gladys, app, logger) {
   // Scene action: a text to the default space.
   gladys.onSceneAction(SCENE_ACTIONS.POST, (fields) => app.postMessage(fields));
 
-  // Configuration screen button.
+  // Configuration screen buttons.
   gladys.onAction(ACTIONS.TEST, () => app.test());
+  gladys.onAction(ACTIONS.FORGET, () => app.forgetRefused());
 
   // Configuration saved by the user.
   gladys.onConfigUpdated((config) => app.configUpdated(config));
