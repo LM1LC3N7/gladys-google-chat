@@ -772,7 +772,7 @@ test('a duplicate takes the outcome of the first: a 429 fails both, nothing said
   assert.equal(ctx.chat.calls.length, 1);
 });
 
-test('a duplicate after a posted message says "already posted" (posted false, deduplicated true)', async (t) => {
+test('a duplicate after a posted message says "already posted" (posted true, deduplicated true)', async (t) => {
   const ctx = await setup();
   t.after(() => ctx.app.stop());
   const one = await ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
@@ -784,7 +784,7 @@ test('a duplicate after a posted message says "already posted" (posted false, de
   await ctx.clock.advance(3 * SECOND);
   const two = await ctx.gladys.fake.sceneAction('post_message', { text: 'Door open' });
   assert.deepEqual(two.data.outputs, {
-    posted: false,
+    posted: true,
     deduplicated: true,
     message_name: 'spaces/AAAAdefault/messages/m1.m1',
   });
@@ -934,4 +934,144 @@ test('/data unreadable: refusals, pauses and the cap learnt meanwhile are kept i
   );
   assert.equal(ctx.chat.calls.length, 3);
   assert.equal(store.saves, 0);
+});
+
+// --- Review r2: marks of /data taken back at first use, status per space ---
+
+const KNOWN_SALT = '0123456789abcdef0123456789abcdef';
+const fpOf = async (kind, value) => {
+  const { createHmac } = await import('node:crypto');
+  return createHmac('sha256', KNOWN_SALT).update(`${kind}:${value}`).digest('hex').slice(0, 2);
+};
+/** A URL of `space` whose 8-bit fingerprint is `fp` (another token than `avoid`). */
+async function colliding(space, fp, avoid) {
+  for (let i = 0; ; i += 1) {
+    const url = urlOf(space, `CollideTok${i}`);
+    if (url !== avoid && (await fpOf('url', url)) === fp) return url;
+  }
+}
+
+test('a mark of /data: held back at first use (maybe another URL), lifted by Forget, gone from /data', async (t) => {
+  const refusedA = urlOf('AAAAuser1', 'RevokedToken-A');
+  const fp = await fpOf('url', refusedA);
+  const B = await colliding('AAAAuser1', fp, refusedA);
+  const store = createMemoryStore({
+    salt: KNOWN_SALT,
+    refused: { [fp]: { status: 401, at: 1 } },
+    pauses: {},
+    sends: [],
+  });
+  const ctx = await setup({ store, answer: () => posted('AAAAuser1') });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  const held = await ctx.gladys.fake.sendMessage({ webhook_url: B }, msg('a'));
+  assert.equal(held.success, false);
+  assert.match(
+    held.error,
+    /same fingerprint as this one was refused .* before the restart \(HTTP 401\); it may be another URL/,
+  );
+  assert.equal(ctx.chat.calls.length, 0);
+  const ack = await ctx.gladys.fake.action('forget_refused');
+  assert.match(JSON.stringify(ack.data), /forgotten/);
+  await settle();
+  assert.deepEqual(ctx.store.data.refused, {}, 'the mark is gone from /data');
+  assert.equal((await ctx.gladys.fake.sendMessage({ webhook_url: B }, msg('b'))).success, true);
+});
+
+test('Forget clears a mark of /data not yet taken by any URL', async (t) => {
+  const store = createMemoryStore({
+    salt: KNOWN_SALT,
+    refused: { ab: { status: 403, at: 1 } },
+    pauses: {},
+    sends: [],
+  });
+  const ctx = await setup({ store });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  await ctx.gladys.fake.action('forget_refused');
+  await settle();
+  assert.deepEqual(ctx.store.data.refused, {});
+  assert.equal(ctx.app.keptRefused.size, 0);
+});
+
+test('the default URL: a mark taken at first use after a restart (Test lifts it), never by a URL saved during the run', async (t) => {
+  const fp = await fpOf('url', DEFAULT_URL);
+  const store = createMemoryStore({
+    salt: KNOWN_SALT,
+    refused: { [fp]: { status: 404, at: 1 } },
+    pauses: {},
+    sends: [],
+  });
+  const ctx = await setup({ store, config: { max_per_hour: 60 } });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  // Saved during the run: never inherits the mark.
+  await ctx.gladys.fake.configUpdated({ webhook_url: DEFAULT_URL });
+  assert.equal(lastStatus(ctx.gladys).connected, true);
+  assert.equal((await ctx.gladys.fake.sceneAction('post_message', { text: 'x' })).success, true);
+
+  // Read at the start (a restart): the first use takes the mark.
+  const store2 = createMemoryStore({
+    salt: KNOWN_SALT,
+    refused: { [fp]: { status: 404, at: 1 } },
+    pauses: {},
+    sends: [],
+  });
+  const next = await setup({ store: store2 });
+  t.after(() => next.app.stop());
+  await until(() => next.app.loaded);
+  await until(() => lastStatus(next.gladys).connected === false);
+  assert.match(
+    lastStatus(next.gladys).message.en,
+    /same fingerprint was refused by Google Chat before the restart \(HTTP 404\)/,
+  );
+  const out = await next.gladys.fake.sceneAction('post_message', { text: 'x' });
+  assert.match(out.error, /it may be another URL/);
+  const ok = await next.gladys.fake.action('test_webhook');
+  assert.match(JSON.stringify(ok.data), /Message posted/);
+  assert.equal(lastStatus(next.gladys).connected, true);
+});
+
+test('a lone "<" never cuts a long text short', () => {
+  return import('../src/format.js').then(({ toChatText }) => {
+    const out = toChatText(`${'x'.repeat(100)} a < b ${'y'.repeat(5000)}`);
+    assert.equal(Array.from(out).length, 4096);
+  });
+});
+
+test('the status of the default space follows a pause set through another webhook of its space', async (t) => {
+  const other = urlOf('AAAAdefault', 'AnotherWebhookToken');
+  const ctx = await setup({ answer: () => json({}, 429, { 'retry-after': '120' }) });
+  t.after(() => ctx.app.stop());
+  assert.equal(lastStatus(ctx.gladys).connected, true);
+  await ctx.gladys.fake.sendMessage({ webhook_url: other }, msg('x'));
+  await until(() => lastStatus(ctx.gladys).connected === false);
+  assert.match(lastStatus(ctx.gladys).message.en, /slow down/);
+});
+
+test('two spaces on one 8-bit pause fingerprint: /data keeps the longer pause', async (t) => {
+  const fpA = await fpOf('space', 'AAAAuser1');
+  let other;
+  for (let i = 0; ; i += 1) {
+    if ((await fpOf('space', `AAAAp${i}`)) === fpA) {
+      other = `AAAAp${i}`;
+      break;
+    }
+  }
+  const store = createMemoryStore({ salt: KNOWN_SALT, refused: {}, pauses: {}, sends: [] });
+  let n = 0;
+  const ctx = await setup({
+    store,
+    answer: () => json({}, 429, { 'retry-after': (n += 1) === 1 ? '3600' : '120' }),
+  });
+  t.after(() => ctx.app.stop());
+  await until(() => ctx.app.loaded);
+  await ctx.gladys.fake.sendMessage({ webhook_url: USER_URL }, msg('a'));
+  await ctx.gladys.fake.sendMessage({ webhook_url: urlOf(other) }, msg('b'));
+  await settle();
+  const kept = ctx.store.data.pauses[fpA];
+  assert.ok(
+    Math.abs(kept.until - Date.UTC(2026, 10, 14, 11, 0, 0)) < 1000,
+    'the hour, not the 2 min',
+  );
 });

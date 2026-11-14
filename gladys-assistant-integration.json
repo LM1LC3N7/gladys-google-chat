@@ -142,8 +142,8 @@
         "fr": "Publier dans Google Chat"
       },
       "description": {
-        "en": "Posts a text in the default space (Markdown turned into the Google Chat syntax, 4,096 characters at most). Never sent twice: the same text sent to the same space less than 15 s earlier is not posted again (output Deduplicated, Posted false); a failure fails this action only.",
-        "fr": "Publie un texte dans l’espace par défaut (Markdown converti en syntaxe Google Chat, 4 096 caractères au plus). Jamais envoyé deux fois : le même texte envoyé au même espace moins de 15 s avant n’est pas republié (sortie Dédoublonné, Publié à faux) ; un échec fait échouer cette action seulement."
+        "en": "Posts a text in the default space (Markdown turned into the Google Chat syntax, 4,096 characters at most). Never sent twice: the same text sent to the same space less than 15 s earlier is not posted again (Posted stays true: the message is in the space; Deduplicated true); a failure fails this action only.",
+        "fr": "Publie un texte dans l’espace par défaut (Markdown converti en syntaxe Google Chat, 4 096 caractères au plus). Jamais envoyé deux fois : le même texte envoyé au même espace moins de 15 s avant n’est pas republié (Publié reste vrai : le message est dans l’espace ; Dédoublonné vrai) ; un échec fait échouer cette action seulement."
       },
       "timeout_seconds": 20,
       "fields": [
@@ -175,8 +175,8 @@
           "key": "posted",
           "type": "boolean",
           "label": {
-            "en": "Message posted",
-            "fr": "Message publié"
+            "en": "Message in the space (posted now or less than 15 s ago)",
+            "fr": "Message dans l’espace (publié maintenant ou il y a moins de 15 s)"
           }
         },
         {

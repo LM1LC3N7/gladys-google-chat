@@ -134,6 +134,11 @@ export class GoogleChatApp {
     // The same, learnt since the start (memory only, kept even when /data is unreadable).
     /** url -> { status, at } (a refusal is per webhook URL: its token) */
     this.refused = new Map();
+    /**
+     * URLs that never take a mark of /data: used once already in this run
+     * (they took theirs then), or configured during this run.
+     */
+    this.seen = new Set();
     /** Google space id -> { due, until, backoff } */
     this.pauses = new Map();
     /** Google space id -> backoff of the last pause, reset by a posted message */
@@ -194,6 +199,9 @@ export class GoogleChatApp {
   async configUpdated(raw) {
     this.timers.clearTimeout(this.configTimer);
     this.configTimer = undefined;
+    // A default URL saved during this run is new: it never inherits a mark of /data.
+    const url = normalizeConfig(raw).webhook?.url;
+    if (url && url !== this.config.webhook?.url && !this.refused.has(url)) this.seen.add(url);
     await this.applyConfig(raw, this.generation);
   }
 
@@ -343,12 +351,28 @@ export class GoogleChatApp {
     return `space #${createHmac('sha256', this.runSalt).update(space).digest('hex').slice(0, 6)}`;
   }
 
-  /** A URL refused (401/403/404): the exact URL in memory, its 8-bit fingerprint from /data. */
+  /**
+   * A URL refused (401/403/404): the exact URL in memory. A mark of /data (an
+   * 8-bit fingerprint, kept from before the restart) is taken back only at the
+   * first use of a URL in this run, never by a URL configured during it; such
+   * a mark may come from another URL sharing the fingerprint (`kept: true`).
+   */
   refusalOf(url) {
-    return (
-      this.refused.get(url) ??
-      (this.salt ? this.keptRefused.get(this.fingerprint('url', url)) : undefined)
-    );
+    const own = this.refused.get(url);
+    if (own || this.seen.has(url) || !this.salt) return own;
+    this.seen.add(url);
+    const kept = this.keptRefused.get(this.fingerprint('url', url));
+    if (!kept) return undefined;
+    const inherited = { status: kept.status, at: kept.at, kept: true };
+    this.refused.set(url, inherited);
+    return inherited;
+  }
+
+  /** Why a refused URL is not used: refused by Google, or a mark of /data. */
+  static refusalReason(refusal) {
+    return refusal.kept
+      ? notSent('refusedKept', { status: refusal.status })
+      : notSent('refusedEarlier', { status: refusal.status });
   }
 
   clearRefusal(url) {
@@ -408,7 +432,7 @@ export class GoogleChatApp {
 
     const mono = this.monotonic();
     const refusal = this.refusalOf(url);
-    if (refusal && !force) return notSent('refusedEarlier', { status: refusal.status });
+    if (refusal && !force) return GoogleChatApp.refusalReason(refusal);
     const paused = this.pauseOf(spaceId, mono);
     if (paused) return notSent('paused', { minutes: minutesOf(paused.due - mono) });
     const space = this.spaceOf(spaceId);
@@ -471,7 +495,7 @@ export class GoogleChatApp {
         release();
         if (this.stopped) return notSent('stopped');
         if (pausedNow) return notSent('paused', { minutes: minutesOf(pausedNow.due - later) });
-        return notSent('refusedEarlier', { status: refusedNow.status });
+        return GoogleChatApp.refusalReason(refusedNow);
       }
     }
 
@@ -580,7 +604,9 @@ export class GoogleChatApp {
       return { posted: true, deduplicated: false, message_name: outcome.name ?? '' };
     }
     if (outcome.kind === 'duplicate') {
-      return { posted: false, deduplicated: true, message_name: outcome.name ?? '' };
+      // The message is in the space (posted by the first one): a fallback scene
+      // branching on `posted` must not fire.
+      return { posted: true, deduplicated: true, message_name: outcome.name ?? '' };
     }
     throw new Error(describe(outcome).en);
   }
@@ -628,7 +654,11 @@ export class GoogleChatApp {
     if (webhook.error) return this.setStatus(false, invalidText(webhook.error), generation);
     const refusal = this.refusalOf(webhook.url);
     if (refusal)
-      return this.setStatus(false, t('defaultRefused', { status: refusal.status }), generation);
+      return this.setStatus(
+        false,
+        t(refusal.kept ? 'defaultRefusedKept' : 'defaultRefused', { status: refusal.status }),
+        generation,
+      );
     const mono = this.monotonic();
     const paused = this.pauseOf(webhook.space, mono);
     if (paused) {

@@ -280,5 +280,53 @@
     "file": "src/app.js",
     "from": "for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {",
     "to": "for (let left = slot - mono, n = 0; n < 1 && !this.stopped; n += 1) {"
+  },
+  {
+    "name": "URL saved during the run never inherits",
+    "file": "src/app.js",
+    "from": "if (url && url !== this.config.webhook?.url && !this.refused.has(url)) this.seen.add(url);",
+    "to": ""
+  },
+  {
+    "name": "longest pause kept",
+    "file": "src/app.js",
+    "from": "if (p.due > mono && !(pauses[fp]?.until > p.until)) {",
+    "to": "if (p.due > mono) {"
+  },
+  {
+    "name": "a mark of /data says maybe another URL",
+    "file": "src/app.js",
+    "from": "return refusal.kept",
+    "to": "return false"
+  },
+  {
+    "name": "status follows the pause of its space",
+    "file": "src/app.js",
+    "from": "if (url === this.config.webhook?.url || spaceId === this.config.webhook?.space) {",
+    "to": "if (url === this.config.webhook?.url) {"
+  },
+  {
+    "name": "duplicate of a posted one is posted",
+    "file": "src/app.js",
+    "from": "return { posted: true, deduplicated: true, message_name: outcome.name ?? '' };",
+    "to": "return { posted: false, deduplicated: true, message_name: outcome.name ?? '' };"
+  },
+  {
+    "name": "Forget clears the marks of /data",
+    "file": "src/app.js",
+    "from": "this.keptRefused.clear();",
+    "to": ""
+  },
+  {
+    "name": "a lone < does not cut",
+    "file": "src/format.js",
+    "from": "cut.lastIndexOf('<http')",
+    "to": "cut.lastIndexOf('<')"
+  },
+  {
+    "name": "marks taken at first use only",
+    "file": "src/app.js",
+    "from": "if (own || this.seen.has(url) || !this.salt) return own;",
+    "to": "if (own || !this.salt) return own;"
   }
 ]

@@ -28,6 +28,10 @@ export const TEXTS = {
     en: 'Default space: Google Chat refused the webhook URL (HTTP {status}). Nothing is sent to it until a new URL is saved, the Test button succeeds or the refused URLs are forgotten.',
     fr: 'Espace par défaut : Google Chat a refusé l’URL du webhook (HTTP {status}). Rien ne lui est envoyé avant qu’une nouvelle URL soit enregistrée, que le bouton Tester réussisse ou que les URL refusées soient oubliées.',
   },
+  defaultRefusedKept: {
+    en: 'Default space: a webhook URL with the same fingerprint was refused by Google Chat before the restart (HTTP {status}); it may be another URL. Nothing is sent to it until the Test button succeeds or the refused URLs are forgotten.',
+    fr: 'Espace par défaut : une URL de webhook de même empreinte a été refusée par Google Chat avant le redémarrage (HTTP {status}) ; c’est peut-être une autre URL. Rien ne lui est envoyé avant que le bouton Tester réussisse ou que les URL refusées soient oubliées.',
+  },
   defaultPaused: {
     en: 'Default space: Google Chat asked to slow down; nothing is sent to it for {minutes} min.',
     fr: 'Espace par défaut : Google Chat a demandé de ralentir ; rien ne lui est envoyé pendant {minutes} min.',
@@ -57,6 +61,10 @@ export const TEXTS = {
   refusedEarlier: {
     en: 'Google Chat refused this webhook URL earlier (HTTP {status}): nothing sent. Save a new URL; the administrator can click Test (default space) or Forget the refused URLs.',
     fr: 'Google Chat a déjà refusé cette URL de webhook (HTTP {status}) : rien n’a été envoyé. Enregistrez une nouvelle URL ; l’administrateur peut cliquer sur Tester (espace par défaut) ou Oublier les URL refusées.',
+  },
+  refusedKept: {
+    en: 'A webhook URL with the same fingerprint as this one was refused by Google Chat before the restart (HTTP {status}); it may be another URL: nothing sent. The administrator can click Forget the refused webhook URLs; a user can also save a new URL.',
+    fr: 'Une URL de webhook de même empreinte que celle-ci a été refusée par Google Chat avant le redémarrage (HTTP {status}) ; c’est peut-être une autre URL : rien n’a été envoyé. L’administrateur peut cliquer sur Oublier les URL de webhook refusées ; un utilisateur peut aussi enregistrer une nouvelle URL.',
   },
   paused: {
     en: 'Google Chat asked to slow down for this space: nothing sent for {minutes} more min.',

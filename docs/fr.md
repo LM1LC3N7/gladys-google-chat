@@ -59,8 +59,9 @@ messages de même clé sont regroupés dans un fil (lettres, chiffres et
 `. _ : -`, 64 au plus). Sorties pour les actions suivantes : `posted` (publié),
 `deduplicated` (dédoublonné) et `message_name` (le nom que Google donne au
 message). Quand le même texte (et la même clé de fil) a été envoyé à cet espace
-moins de 15 s avant et publié, rien n'est republié : `posted` est faux et
-`deduplicated` vrai.
+moins de 15 s avant et publié, rien n'est republié : `posted` reste vrai (le
+message est dans l'espace), `deduplicated` est vrai, une branche de secours sur
+`posted` ne se déclenche donc pas.
 
 L'action de scène attend la réponse de Google : si le message est refusé, ou si
 Google ne répond pas, l'action échoue et la scène continue.
@@ -73,7 +74,7 @@ Google ne répond pas, l'action échoue et la scène continue.
   italique, barré, code, liens `[texte](https://…)`, les titres deviennent une
   ligne en gras. Les textes de plus de 4 096 caractères sont coupés (finis par
   « … »), jamais au milieu d'un lien ou d'un bloc de code. Une mention tapée
-  dans un texte (`<users/all>`) devient un simple `@all` : elle ne notifie
+  dans un texte, code compris (`<users/all>`), devient un simple `@all` : elle ne notifie
   jamais tout l'espace.
 - **Les images ne sont pas envoyées** (une photo de caméra jointe à un
   message) : un webhook entrant ne publie que du texte. Le texte du message
@@ -135,11 +136,17 @@ Ce qui sort de Gladys : le texte des messages, vers Google Chat
 (`chat.googleapis.com`) seulement, en HTTPS. Une redirection n'est jamais
 suivie. Ce que garde `/data/state.json` : un sel aléatoire, des empreintes
 salées de 8 bits des URL refusées et des espaces en pause (une URL sur 256
-partage une empreinte, le fichier ne confirme donc jamais une URL ; après un
-redémarrage, une nouvelle URL qui partage l'empreinte d'une URL refusée est
-retenue jusqu'au clic sur Oublier), les dates de fin des pauses et les heures
-des messages de la dernière heure (pour le plafond horaire). Jamais une URL,
-une clé, un jeton ni le texte d'un message.
+partage une empreinte, le fichier ne confirme donc jamais une URL), les dates
+de fin des pauses et les heures des messages de la dernière heure (pour le
+plafond horaire). Jamais une URL, une clé, un jeton ni le texte d'un message.
+
+Une collision est possible : après un redémarrage, le premier message vers une
+URL dont l'empreinte est celle d'une URL refusée est retenu, avec un message
+qui dit que c'est peut-être une autre URL. Une URL par défaut enregistrée après
+le redémarrage n'hérite jamais d'une telle marque. Un utilisateur dont l'URL de
+contact est ainsi retenue demande à l'administrateur de cliquer sur **Oublier
+les URL de webhook refusées** (ou enregistre une nouvelle URL) ; pour l'espace
+par défaut, le bouton Tester la lève aussi.
 
 Si `/data` est illisible au démarrage, les messages partent quand même ; les
 refus, pauses et messages appris depuis le démarrage sont gardés en mémoire,

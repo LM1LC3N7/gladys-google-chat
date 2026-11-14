@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
 // Gladys writes its messages in Markdown; a Google Chat webhook reads its own
 // syntax: *bold*, _italic_, ~strike~, `code`, ```block```, <url|text>. The
-// common Markdown is turned into it, code left as is; the rest stays plain
-// text. A mention (`<users/all>`, `<users/123>`) is never passed on: it would
+// common Markdown is turned into it, code left as is (mentions apart); the
+// rest stays plain text. A mention (`<users/all>`, `<users/123>`) is never passed on: it would
 // notify the whole space. The result is cut to 4,096 characters, never in a
 // half character, a link or a code block.
 // -----------------------------------------------------------------------------
@@ -25,11 +25,11 @@ export function toChatText(markdown) {
   let out = text
     // eslint-disable-next-line no-control-regex
     .replace(/\u0000/g, '')
+    // Mentions written in a text never notify, code included: <users/all> -> @all.
+    .replace(/<users\/([^<>\s]{1,128})>/g, '@$1')
     .replace(/```[^\n`]*\n?([\s\S]*?)```/g, (_, body) => hold(`\`\`\`${body}\`\`\``))
     .replace(/`([^`\n]+)`/g, (_, body) => hold(`\`${body}\``));
   out = out
-    // Mentions written in a text never notify: <users/all> -> @all.
-    .replace(/<users\/([^<>\s]{1,128})>/g, '@$1')
     // [text](https://…) -> <https://…|text>; other schemes stay plain.
     .replace(/\[([^\]\n]{1,500})\]\((https?:\/\/[^\s()<>|]{1,2000})\)/g, (_, label, url) =>
       hold(`<${url}|${label.replace(/[<>|]/g, '')}>`),
@@ -71,7 +71,8 @@ export function truncate(text, max) {
   const chars = Array.from(text);
   if (chars.length <= max) return text;
   let cut = chars.slice(0, max - 1).join('');
-  const open = cut.lastIndexOf('<');
+  // Only a link of ours (<http…|text>) is dropped: a lone "<" (a < b) stays.
+  const open = cut.lastIndexOf('<http');
   if (open >= 0 && !cut.includes('>', open)) cut = cut.slice(0, open);
   if ((cut.split('```').length - 1) % 2 === 1) cut = cut.slice(0, cut.lastIndexOf('```'));
   return `${cut.trimEnd()}…`;

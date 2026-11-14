@@ -46,6 +46,6 @@
 - Pauses, slots and dedupe per Google space (`spaces/<id>`, shared by its
   webhooks); refusals per webhook URL (its token).
 - A duplicate within 15 s waits for the first message and takes its outcome;
-  after a posted one, the scene action answers `posted: false`,
+  after a posted one, the scene action answers `posted: true`,
   `deduplicated: true`.
 - Mentions typed in a text (`<users/…>`) are turned into plain `@…`.

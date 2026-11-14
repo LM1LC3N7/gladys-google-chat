@@ -31,6 +31,7 @@ test('a mention written in a text never notifies the space', () => {
   assert.equal(toChatText('Alarm <users/all>!'), 'Alarm @all!');
   assert.equal(toChatText('<users/123456>'), '@123456');
   assert.equal(toChatText('[<users/all>](https://x.example)'), '<https://x.example|@all>');
+  assert.equal(toChatText('`<users/all>` and ```\n<users/all>\n```'), '`@all` and ```@all\n```');
 });
 
 test('the cut never stops inside a link or a code block', () => {

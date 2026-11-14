@@ -53,7 +53,8 @@ same key are grouped in one thread (letters, digits and `. _ : -`, 64 at
 most). Outputs for the next actions: `posted`, `deduplicated` and
 `message_name` (the name Google gives the message). When the same text (and
 thread key) was sent to that space less than 15 s earlier and posted, nothing
-is posted again: `posted` is false and `deduplicated` true.
+is posted again: `posted` stays true (the message is in the space) and
+`deduplicated` is true, so a fallback branch on `posted` does not fire.
 
 The scene action waits for Google's answer: if the message is refused, or if
 Google does not answer, the action fails and the scene goes on.
@@ -65,7 +66,7 @@ Google does not answer, the action fails and the scene goes on.
 - Gladys writes Markdown; it is turned into the Google Chat syntax: bold,
   italic, strikethrough, code, links `[text](https://…)`, titles become a bold
   line. Texts longer than 4,096 characters are cut (ending with "…"), never
-  inside a link or a code block. A mention typed in a text (`<users/all>`)
+  inside a link or a code block. A mention typed in a text, code included (`<users/all>`),
   becomes plain `@all`: it never notifies the whole space.
 - **Images are not sent** (a camera snapshot attached to a message): an
   incoming webhook posts text only. The text of the message is still posted.
@@ -123,10 +124,16 @@ What leaves Gladys: the text of the messages, to Google Chat
 (`chat.googleapis.com`) only, over HTTPS. A redirect is never followed. What
 `/data/state.json` keeps: a random salt, 8-bit salted fingerprints of the
 refused URLs and of the paused spaces (one URL in 256 shares a fingerprint, so
-the file never confirms a URL; after a restart, a new URL sharing the
-fingerprint of a refused one is held back until the Forget button is clicked),
-the end dates of the pauses and the times of the messages of the last hour
-(for the hourly cap). Never a URL, a key, a token or a message text.
+the file never confirms a URL), the end dates of the pauses and the times of the
+messages of the last hour (for the hourly cap). Never a URL, a key, a token or
+a message text.
+
+A collision is possible: after a restart, the first message to a URL whose
+fingerprint is the one of a refused URL is held back, with a message saying
+it may be another URL. A default URL saved after the restart never inherits
+such a mark. A user whose contact URL is held back this way asks the
+administrator to click **Forget the refused webhook URLs** (or saves a new
+URL); for the default space, the Test button also lifts it.
 
 If `/data` cannot be read when the integration starts, messages still go; the
 refusals, pauses and messages learnt since the start are kept in memory, but
