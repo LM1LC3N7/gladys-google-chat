@@ -1,6 +1,6 @@
 {
   "name": "gladys-google-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant messages and alerts in a Google Chat space, through an incoming webhook (send only).",
   "type": "module",

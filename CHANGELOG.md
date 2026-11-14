@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-14
+
 ### Added
 
 - Gladys messages in Google Chat: each user pastes the incoming webhook URL of
@@ -26,4 +28,5 @@ the notes of the version's GitHub Release.
 - A "Forget the refused webhook URLs" button.
 - Mentions typed in a text (`<users/all>`) never notify the space.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-google-chat/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-google-chat/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-google-chat/releases/tag/v0.1.1
