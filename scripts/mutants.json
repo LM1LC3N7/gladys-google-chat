@@ -1,0 +1,164 @@
+[
+  {
+    "name": "refused URL not sent again",
+    "file": "src/app.js",
+    "from": "if (refusal && !force) return",
+    "to": "if (false) return"
+  },
+  {
+    "name": "paused space not sent",
+    "file": "src/app.js",
+    "from": "if (paused) return notSent('paused', { minutes: minutesOf(paused.due - mono) });",
+    "to": ""
+  },
+  {
+    "name": "dedupe within 15 s",
+    "file": "src/app.js",
+    "from": "if (space.recent.has(hash)) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "hourly cap boundary",
+    "file": "src/app.js",
+    "from": "if (this.sends.length >= this.config.maxPerHour) {",
+    "to": "if (this.sends.length > this.config.maxPerHour) {"
+  },
+  {
+    "name": "queue wait bounded",
+    "file": "src/app.js",
+    "from": "slot - mono > QUEUE_WAIT_MAX) return",
+    "to": "slot - mono > 1e9) return"
+  },
+  {
+    "name": "one slot per message",
+    "file": "src/app.js",
+    "from": "space.next = slot + SPACE_GAP;",
+    "to": "space.next = slot;"
+  },
+  {
+    "name": "re-checked after waiting",
+    "file": "src/app.js",
+    "from": "if (this.stopped || (refusedNow && !force) || pausedNow) {",
+    "to": "if (this.stopped) {"
+  },
+  {
+    "name": "dedupe forgets a message not posted",
+    "file": "src/app.js",
+    "from": "if (!MAYBE_POSTED.has(outcome.kind)) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "401 marks the URL refused",
+    "file": "src/app.js",
+    "from": "this.refused.set(url, { status: outcome.status, at: this.now() });",
+    "to": ""
+  },
+  {
+    "name": "5xx pauses the space",
+    "file": "src/app.js",
+    "from": "      case 'rateLimited':\n      case 'serverError': {",
+    "to": "      case 'rateLimited': {"
+  },
+  {
+    "name": "Test success lifts the refusal",
+    "file": "src/app.js",
+    "from": "if (force) this.clearRefusal(url);",
+    "to": ""
+  },
+  {
+    "name": "ack within the budget",
+    "file": "src/app.js",
+    "from": "resolve(undefined), SEND_BUDGET);",
+    "to": "resolve(undefined), 60_000);"
+  },
+  {
+    "name": "future /data send date invalid",
+    "file": "src/app.js",
+    "from": "at <= now && now - at < RATE_WINDOW",
+    "to": "now - at < RATE_WINDOW"
+  },
+  {
+    "name": "kept pause capped to 6 h",
+    "file": "src/app.js",
+    "from": "const left = Math.min(until - now, PAUSE_MAX);",
+    "to": "const left = until - now;"
+  },
+  {
+    "name": "/data never written before read",
+    "file": "src/app.js",
+    "from": "if (!this.loaded || !this.store) return;",
+    "to": "if (!this.store) return;"
+  },
+  {
+    "name": "config read spaced",
+    "file": "src/app.js",
+    "from": "this.configDelay = Math.min(this.configDelay * 2, CONFIG_RETRY_MAX);",
+    "to": ""
+  },
+  {
+    "name": "stop cuts the requests",
+    "file": "src/app.js",
+    "from": "this.stopper.abort();",
+    "to": ""
+  },
+  {
+    "name": "never a second /data read beside a hung one",
+    "file": "src/app.js",
+    "from": "if (this.reading) this.scheduleStoreRead();\n      else this.loadStore();",
+    "to": "this.reading = false;\n      this.loadStore();"
+  },
+  {
+    "name": "pause bounds",
+    "file": "src/app.js",
+    "from": "Math.max(PAUSE_MIN, retryAfter ?? backoff)",
+    "to": "(retryAfter ?? backoff)"
+  },
+  {
+    "name": "never before the slot",
+    "file": "src/app.js",
+    "from": "for (let left = slot - mono; left > 0 && !this.stopped; left = slot - this.monotonic()) {",
+    "to": "for (let left = slot - mono, n = 0; n < 1 && !this.stopped; n += 1) {"
+  },
+  {
+    "name": "only chat.googleapis.com",
+    "file": "src/config.js",
+    "from": "url.hostname !== HOST ||",
+    "to": ""
+  },
+  {
+    "name": "only key and token",
+    "file": "src/config.js",
+    "from": "keys.length !== 2 ||",
+    "to": ""
+  },
+  {
+    "name": "control characters refused",
+    "file": "src/config.js",
+    "from": "|| CONTROL.test(text)",
+    "to": ""
+  },
+  {
+    "name": "redirect not followed",
+    "file": "src/chat.js",
+    "from": "redirect: 'manual',",
+    "to": "redirect: 'follow',"
+  },
+  {
+    "name": "refused port is nothing sent",
+    "file": "src/chat.js",
+    "from": "  'ECONNREFUSED',\n",
+    "to": ""
+  },
+  {
+    "name": "answer read bounded",
+    "file": "src/chat.js",
+    "from": "if (size > max) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "links: http(s) only",
+    "file": "src/format.js",
+    "from": "\\((https?:\\/\\/",
+    "to": "\\(([a-z]+:"
+  }
+]

@@ -1,61 +1,113 @@
-# Demo Devices Template
+# Google Chat for Gladys Assistant
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+Unofficial integration, not affiliated with Google. **Send only**: Gladys posts
+its messages and alerts in a Google Chat space through an **incoming webhook**.
+Nothing is read back from Google Chat: you cannot talk to Gladys from there.
 
-## What you get
+This integration has never been tested with a real Google Chat space: it is
+written from Google's public documentation, and tested against simulated
+answers.
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+## What you need
+
+- A **Google Workspace Business or Enterprise** account with access to Google
+  Chat. A free personal Google account (gmail.com) cannot create webhooks.
+- Your Workspace administrator must allow users to add incoming webhooks
+  (Admin console → Apps → Google Workspace → Google Chat → Chat apps).
+- A space where the webhook is added (a webhook posts in its own space only).
+
+## Create the webhook
+
+1. In Google Chat, open the space, click its name → **Apps & integrations** →
+   **Webhooks** → **Add webhook**.
+2. Give it a name (e.g. "Gladys") and an avatar if you like, save.
+3. Copy the URL. It looks like
+   `https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…`.
+
+**The URL is a secret**: anyone holding it can post in the space. Gladys keeps
+it in its database, never shows it again and sends it only to Google Chat; the
+integration never writes it in its logs, its status or its `/data` folder
+(logs name a space by a short fingerprint, like `space #3fa91c`). If it leaks,
+delete the webhook in the space and create a new one.
 
 ## Configuration
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+**Configuration** screen (administrator):
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+- **Default space: webhook URL** (optional): the space of the "Post in Google
+  Chat" scene action and of the **Test** button.
+- **Messages per hour, at most** (default 60, 1 to 600): all spaces together,
+  the Test button included. Beyond it a message is **not sent** (the refusal is
+  logged), it is never kept for later.
 
-## Actions
+**My account** block (each user, administrators or not): paste the webhook URL
+of the space where you want the messages Gladys sends **you** (scene action
+"Send a message", system messages such as a failed backup or a low battery,
+the answers of the assistant to a message you typed in Gladys). Clear it to
+stop.
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+## The scene action "Post in Google Chat"
 
-## Scenes
+Posts a text in the default space. Optional **thread key**: messages with the
+same key are grouped in one thread (letters, digits and `. _ : -`, 64 at
+most). Outputs for the next actions: `posted` and `message_name` (the name
+Google gives the message).
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+The scene action waits for Google's answer: if the message is refused, or if
+Google does not answer, the action fails and the scene goes on.
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+## What is sent, and when
 
-## Dashboard
+- Nothing is sent without a Gladys message, a scene or a click on **Test**.
+  No polling, no background traffic.
+- Gladys writes Markdown; it is turned into the Google Chat syntax: bold,
+  italic, strikethrough, code, links `[text](https://…)`, titles become a bold
+  line. Texts longer than 4,096 characters are cut (ending with "…").
+- **Images are not sent** (a camera snapshot attached to a message): an
+  incoming webhook posts text only. The text of the message is still posted.
+- **One message a second per space** (Google's limit): a message waits its turn
+  for up to about 2 s; a burst beyond that is not sent ("too many messages at
+  once").
+- **The same text to the same space within 15 s is posted once**: when several
+  users paste the same space, a message Gladys sends to all of them appears
+  once.
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+## Never sent twice
 
-## Troubleshooting
+A message that may have reached Google is **never sent again**, so the integration
+never posts it twice. What each answer leads to:
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+| Answer of Google Chat                          | What happens                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Posted (200)                                   | Done.                                                                                                                                                                                                                                                                                  |
+| 429 (too many requests)                        | Nothing posted. The space is paused (the delay Google gives, else 1 min, then 2, 4… up to 6 h). During the pause, messages to that space are not sent. The pause survives a restart.                                                                                                   |
+| 401, 403, 404                                  | The URL is **refused**: webhook deleted, token revoked, or webhooks turned off by the administrator. Nothing more is sent to that URL until a new URL is saved, or the **Test** button succeeds (a click tries it again). Kept across restarts as a salted fingerprint, never the URL. |
+| Another 4xx                                    | Nothing posted (the message was rejected); the next message is tried.                                                                                                                                                                                                                  |
+| 5xx                                            | Maybe posted, maybe not: **not sent again**, the space paused like a 429.                                                                                                                                                                                                              |
+| No answer within 10 s                          | Maybe posted: not sent again.                                                                                                                                                                                                                                                          |
+| Network, DNS, certificate error before sending | Nothing sent; the next message is tried.                                                                                                                                                                                                                                               |
+
+Gladys gives a message 5 seconds: the integration answers it within 3.5 s;
+a message still waiting for Google then goes on and its outcome is logged.
+
+## Test button
+
+**Test the default space** posts one test message in the default space and
+says what Google answered. It counts in the hourly cap, is not sent during a
+pause like any message, and is the one way to try again a URL that was
+refused.
+
+## Status
+
+The Configuration screen shows: ready (with or without a default space), a
+default URL that is not a Google Chat webhook URL, a default URL refused by
+Google, a pause in progress, or a configuration that could not be read (read
+again every 5 s, then less and less often, up to every 5 min).
+
+## Privacy
+
+What leaves Gladys: the text of the messages, to Google Chat
+(`chat.googleapis.com`) only, over HTTPS. A redirect is never followed. What
+`/data/state.json` keeps: a random salt, the salted fingerprints of refused
+URLs, the end dates of the pauses and the times of the messages of the last
+hour (for the hourly cap). Never a URL, a key, a token or a message text.

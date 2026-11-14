@@ -1,45 +1,99 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration (manifest `config_schema`) and the webhook URLs, normalized
+// and checked. A webhook URL is a secret (its `token` lets anyone post in the
+// space): it is checked strictly here, so nothing but chat.googleapis.com is
+// ever called, and it never appears in a log, a status, /data or an error.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
-export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+import { RATE_DEFAULT, RATE_MAX, RATE_MIN } from './constants.js';
+
+// Defaults: they MUST match the `default` values of the manifest.
+export const DEFAULTS = {
+  webhook_url: '',
+  max_per_hour: RATE_DEFAULT,
 };
 
+const HOST = 'chat.googleapis.com';
+const SPACE = /^\/v1\/spaces\/([A-Za-z0-9_-]{1,128})\/messages$/;
+const PARAM = /^[A-Za-z0-9_.%=-]{1,512}$/;
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * Checks a webhook URL. Resolves `{ url }` (rebuilt from its checked parts) or
+ * `{ error }`, a code of i18n.js (`emptyUrl`, `badUrl`, `notGoogleChat`,
+ * `badUrlParams`): never the URL itself.
  */
-export function normalizeConfig(raw = {}) {
+export function parseWebhookUrl(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return { error: 'emptyUrl' };
+  if (text.length > 2048 || CONTROL.test(text)) return { error: 'badUrl' };
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return { error: 'badUrl' };
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.hostname !== HOST ||
+    url.port !== '' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.hash !== ''
+  ) {
+    return { error: 'notGoogleChat' };
+  }
+  const space = SPACE.exec(url.pathname);
+  if (!space) return { error: 'notGoogleChat' };
+  const keys = [...url.searchParams.keys()];
+  const key = url.searchParams.get('key');
+  const token = url.searchParams.get('token');
+  if (
+    keys.length !== 2 ||
+    !keys.includes('key') ||
+    !keys.includes('token') ||
+    !PARAM.test(key ?? '') ||
+    !PARAM.test(token ?? '')
+  ) {
+    return { error: 'badUrlParams' };
+  }
+  // Rebuilt with the raw (still encoded) values: `token` often ends in `%3D`.
+  const raw = Object.fromEntries(
+    url.search
+      .slice(1)
+      .split('&')
+      .map((pair) => {
+        const at = pair.indexOf('=');
+        return [pair.slice(0, at), pair.slice(at + 1)];
+      }),
+  );
+  if (!PARAM.test(raw.key ?? '') || !PARAM.test(raw.token ?? '')) return { error: 'badUrlParams' };
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    url: `https://${HOST}/v1/spaces/${space[1]}/messages?key=${raw.key}&token=${raw.token}`,
   };
+}
+
+/** A whole number within bounds, or the default (an empty field, a decimal, a text). */
+function integerIn(value, min, max, fallback) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isInteger(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** `{ webhook: { url } | { error } | null, maxPerHour }`. */
+export function normalizeConfig(raw = {}) {
+  const text = typeof raw?.webhook_url === 'string' ? raw.webhook_url.trim() : '';
+  return {
+    webhook: text ? parseWebhookUrl(text) : null,
+    maxPerHour: integerIn(raw?.max_per_hour, RATE_MIN, RATE_MAX, RATE_DEFAULT),
+  };
+}
+
+/** A thread key: plain characters only, or none. */
+export function threadKeyOf(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return undefined;
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(text) ? text : null;
 }
