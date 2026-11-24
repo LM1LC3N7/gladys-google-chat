@@ -6,8 +6,8 @@
     "en": "Unofficial: Gladys messages and alerts in a Google Chat space, through an incoming webhook.",
     "fr": "Non officiel : messages et alertes de Gladys dans un espace Google Chat, par webhook entrant."
   },
-  "version": "0.1.1",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-google-chat:0.1.1",
+  "version": "0.1.2",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-google-chat:0.1.2",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-google-chat/main/cover.png",
   "categories": ["notifications"],
