@@ -43,7 +43,7 @@ test('a Gladys message is posted once to the user space, in the Chat syntax', as
   assert.deepEqual(call.body, { text: '*Alarm* in <https://x.example/a|cam>' });
   assert.match(
     call.headers['User-Agent'],
-    /^gladys-google-chat\/0\.1\.0 \(\+https:\/\/github\.com\/LM1LC3N7\/gladys-google-chat\)$/,
+    /^gladys-google-chat\/\d+\.\d+\.\d+ \(\+https:\/\/github\.com\/LM1LC3N7\/gladys-google-chat\)$/,
   );
   assert.equal(call.headers['Content-Type'], 'application/json; charset=UTF-8');
   assert.equal(call.redirect, 'manual');

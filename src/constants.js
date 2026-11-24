@@ -2,7 +2,12 @@
 // Fixed values: keys shared with the manifest, limits and delays.
 // -----------------------------------------------------------------------------
 
-export const VERSION = '0.1.0';
+import { readFileSync } from 'node:fs';
+
+/** The version of this integration, from package.json (copied in the image). */
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+export const VERSION = pkg.version;
 export const USER_AGENT = `gladys-google-chat/${VERSION} (+https://github.com/LM1LC3N7/gladys-google-chat)`;
 
 export const ACTIONS = { TEST: 'test_webhook', FORGET: 'forget_refused' };
